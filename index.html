@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Waylands Path</title>
+<meta name="description" content="Turn a photo, drawing or messy SVG into clean laser lines, tidy them up, and export LaserGRBL files.">
+<meta name="theme-color" content="#16232b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="home">
+<div id="home">
+  <div class="hcard">
+    <img src="icons/icon.svg" alt="" class="hlogo">
+    <h1 class="htitle">Waylands Path</h1>
+    <div class="hsub">Photo, drawing or SVG → clean laser lines</div>
+    <div class="hbtns">
+      <label class="hb primary filebtn">📷 Open photo or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
+      <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
+      <button id="homeHelp" class="hb">? How it works</button>
+    </div>
+    <div class="hver" id="homeVer"></div>
+  </div>
+</div>
+<div id="updBar" hidden><span>New version ready</span><button id="updBtn">Tap to update</button></div>
+<header>
+  <img src="icons/icon.svg" alt="" class="logo"><button id="homeBtn" title="Home (your work is kept)" aria-label="Home">⌂</button>
+  <h1>Waylands Path</h1><button id="nameBtn" class="namebtn" title="Rename project">Untitled ✎</button>
+  <div class="spacer"></div>
+  <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
+  <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
+  <button id="fitBtn" title="Fit the design on screen" aria-label="Fit view">⤢<span class="tl"> Fit</span></button>
+  <button id="installBtn" class="accent" hidden title="Install as an app">⊕<span class="tl"> Install</span></button>
+  <button id="helpBtn" title="How it works" aria-label="Help">?</button>
+</header>
+<main>
+  <section id="stageWrap">
+    <canvas id="stage" aria-label="Design"></canvas>
+    <div id="stats" class="stats"></div>
+    <div id="busy" class="busy" hidden>Tracing…</div>
+    <div id="empty" class="empty"><label class="filebtn big">📷 Open photo or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+  </section>
+  <div id="toolDock">
+    <div id="tools" role="toolbar" aria-label="Tools">
+      <button data-tool="move" class="tool on" title="Move and zoom the view">✋<span>Move</span></button>
+      <button data-tool="erase" class="tool" title="Erase lines">⌫<span>Erase</span></button>
+      <button data-tool="draw" class="tool" title="Draw a new line">✎<span>Draw</span></button>
+      <button data-tool="join" class="tool" title="Join loose ends">🔗<span>Join</span></button>
+    </div>
+    <div id="toolOpts">
+      <div data-opts="move" class="topts">Drag to move · pinch or mouse wheel to zoom. Pick a tool to edit.</div>
+      <div data-opts="erase" class="topts" hidden>
+        <div class="seg"><button id="eraseTap" class="on">Tap a line</button><button id="eraseBrush">Brush</button></div>
+        <label class="bsz" id="brushWrap" hidden><span>Size</span><input type="range" id="brushSize" min="6" max="60" value="22"></label>
+        <span class="tip" id="eraseTip">Tap a line to delete it. Drag moves the view.</span>
+      </div>
+      <div data-opts="draw" class="topts" hidden>Draw with one finger (or the mouse). Lines are smoothed and snap to loose ends. Two fingers move the view.</div>
+      <div data-opts="join" class="topts" hidden><span class="tip">Drag from one loose end (orange dot) to another.</span><button id="joinAuto2" class="accent">Join gaps</button></div>
+    </div>
+  </div>
+  <aside id="panel">
+    <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
+      <div class="row"><label class="filebtn grow accent">📷 Open photo, PNG, JPG or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <label class="chk"><input type="checkbox" id="showPhoto" checked>Show the picture faintly behind the lines</label>
+      <div class="hint" id="srcInfo">No picture yet.</div>
+    </div></details>
+    <details name="acc" id="sec-trace"><summary>2 · Trace</summary><div class="body">
+      <div class="seg wide2"><button id="modeLines" class="on">Centre lines</button><button id="modeOutline">Outlines</button></div>
+      <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
+      <label class="rg"><span>Remove specks</span><input type="range" id="specks" min="0" max="10" step="1" value="3"><output id="specksOut">3</output></label>
+      <div class="g2">
+        <label><span>Picture is</span><select id="kind"><option value="auto">Auto</option><option value="photo">A photo</option><option value="drawing">A drawing / logo</option></select></label>
+        <label class="chk"><input type="checkbox" id="invert">Light lines on dark</label>
+      </div>
+      <div class="hint" id="traceInfo"></div>
+      <div class="hint">Moving these re-traces the picture and replaces your edits (Undo brings them back).</div>
+    </div></details>
+    <details name="acc" id="sec-tidy"><summary>3 · Tidy up</summary><div class="body">
+      <div class="hint" id="tidyCount"></div>
+      <div class="row"><button id="smoothBtn" class="grow">〰 Smooth / simplify</button></div>
+      <div class="row"><label class="grow"><span>Join gaps up to</span><input type="number" id="joinMm" inputmode="decimal" min="0.1" max="20" step="any" value="1.5"><span>mm</span></label><button id="joinAuto" class="accent">🔗 Join gaps</button></div>
+      <div class="row"><label class="grow"><span>Stray bits under</span><input type="number" id="shortMm" inputmode="decimal" min="0.1" max="100" step="any" value="2"><span>mm</span></label><button id="shortBtn" class="accent">🧹 Remove</button></div>
+      <div class="hint" id="tidyOut"></div>
+    </div></details>
+    <details name="acc" id="sec-size"><summary>4 · Size &amp; outer cut</summary><div class="body">
+      <div class="g2">
+        <label><span>Width (mm)</span><input type="number" id="widthMm" inputmode="decimal" min="5" max="2000" step="any" value="150"></label>
+        <label><span>Height</span><output id="heightOut">–</output></label>
+        <label><span>Line width (mm)</span><input type="number" id="lineMm" inputmode="decimal" min="0.05" max="5" step="any" value="0.3"></label>
+      </div>
+      <div class="hint">Width is the line art. Height follows (aspect kept). Line width is for the SVG and the Line To Line / Dithering modes.</div>
+      <label class="chk big"><input type="checkbox" id="cutOn">Outer cut (cut out around the artwork)</label>
+      <div id="cutBox" hidden><label><span>Gap from the lines (mm)</span><input type="number" id="cutOff" inputmode="decimal" min="0.5" max="50" step="any" value="3"></label>
+        <div class="hint" id="cutInfo"></div></div>
+    </div></details>
+    <details name="acc" id="sec-laser"><summary>5 · Laser steps</summary><div class="body">
+      <div class="hint">Tap a step to open it. Power is % of your laser max S, speed in mm/min. Written into each .nc file.</div>
+      <div id="lzSteps"></div>
+      <label><span>Laser max S ($30)</span><input type="number" id="smax" value="1000" min="1" max="100000" step="1"></label>
+    </div></details>
+    <details name="acc" id="sec-export"><summary>6 · Export &amp; share</summary><div class="body">
+      <div class="hint" id="exSummary"></div>
+      <div class="row"><button id="shareBtn" class="accent grow big2">📤 Share laser files</button></div>
+      <div class="row"><button id="saveZipBtn" class="grow">💾 Save laser zip</button><button id="svgBtn" class="grow">⬇ SVG only</button></div>
+      <div id="exOut" class="exout"></div>
+    </div></details>
+    <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
+      <div class="hint">Your work saves on this device by itself. Open the app again and tap Resume.</div>
+      <div class="row"><button id="newBtn" class="grow">✚ New project (open another picture)</button></div>
+      <div class="hint" id="saveInfo"></div>
+      <div class="hint small">Waylands Path <span id="verOut"></span> · works offline · sister app to Wayland Forge</div>
+    </div></details>
+  </aside>
+</main>
+<div id="help" hidden><div class="hcard2"><div id="helpStep"></div><div class="row"><button id="helpSkip">Close</button><div class="grow"></div><button id="helpBack">‹ Back</button><button id="helpNext" class="accent">Next ›</button></div></div></div>
+<div id="toast" hidden></div>
+<script src="js/geom.js"></script>
+<script src="js/trace.js"></script>
+<script src="js/svgin.js"></script>
+<script src="js/laser.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
