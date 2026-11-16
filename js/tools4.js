@@ -23,7 +23,7 @@ window.T4 = (() => {
   // make the line pass exactly through a snapped point (adds a point there) so the lines join
   function attach(s) { if (!s.line) return; const p = S.paths[s.line.pi]; if (!p) return; if (s.line.t < 0.02 || s.line.t > 0.98) return; BZ.insertNode(p, s.line.k, s.line.t); }
   // ---------- generic clipping: cut a path where insideFn changes, drop the inside pieces ----------
-  function clip(p, inside, stepU) { const m = BZ.nseg(p); if (!m) return null; const flat = BZ.flatSegs(p, Math.max(0.05, stepU / 3)), cuts = new Map(); let any = false;
+  function clip(p, inside, stepU, minU) { const m = BZ.nseg(p); if (!m) return null; const flat = BZ.flatSegs(p, Math.max(0.05, stepU / 3)), cuts = new Map(); let any = false;
     for (let k = 0; k < m; k++) { const f = flat[k]; let L = 0; for (let i = 1; i < f.length; i++) L += d2(f[i - 1], f[i]); const N = Math.max(4, Math.min(600, Math.ceil(L / stepU)));
       let prev = inside(BZ.pointAt(p, k, 0)); if (prev) any = true; const ts = [];
       for (let i = 1; i <= N; i++) { const t = i / N, cur = inside(BZ.pointAt(p, k, t)); if (cur) any = true;
@@ -32,12 +32,21 @@ window.T4 = (() => {
     if (!any) return null; const q = BZ.clone(p);
     [...cuts.keys()].sort((a, b) => b - a).forEach(k => { let cur = 1; cuts.get(k).sort((a, b) => b - a).forEach(t => { BZ.insertNode(q, k, t / cur); cur = t; }); });
     const del = new Set(); for (let k = 0; k < BZ.nseg(q); k++) if (inside(BZ.pointAt(q, k, 0.5))) del.add(k);
+    if (minU > 0 && del.size) tidyRuns(q, del, minU);
     if (!del.size) return null; if (del.size === BZ.nseg(q)) return []; return keepSegs(q, del); }
+  // Clear space tidy-up: a removed bit shorter than minU is a speck (a frame touched where another line meets it) - keep it;
+  // a kept crumb shorter than minU next to a removed stretch is dropped
+  function tidyRuns(q, del, minU) { const m = BZ.nseg(q), fs = BZ.flatSegs(q, minU / 6), len = fs.map(f => { let L = 0; for (let i = 1; i < f.length; i++) L += d2(f[i - 1], f[i]); return L; });
+    const runs = () => { const out = []; let start = 0; if (q.z) { start = -1; for (let k = 0; k < m; k++) if (del.has(k) !== del.has((k + m - 1) % m)) { start = k; break; } if (start < 0) return [{ d: del.has(0), ks: [...Array(m).keys()] }]; }
+      let cur = null; for (let c = 0; c < m; c++) { const k = (start + c) % m, d = del.has(k); if (!cur || cur.d !== d) { cur = { d, ks: [] }; out.push(cur); } cur.ks.push(k); } return out; };
+    const L = r => r.ks.reduce((a, k) => a + len[k], 0);
+    for (const r of runs()) if (r.d && L(r) < minU) r.ks.forEach(k => del.delete(k));
+    if (del.size) for (const r of runs()) if (!r.d && L(r) < minU) r.ks.forEach(k => del.add(k)); }
   // apply clip to many paths (indices high->low so splicing keeps earlier indices valid). Returns how many paths changed.
-  function clipAll(list, inside, stepU) { let n = 0; [...list].sort((a, b) => b - a).forEach(pi => { const r = clip(S.paths[pi], inside, stepU); if (r) { replacePath(pi, r); n++; } }); return n; }
+  function clipAll(list, inside, stepU, minU) { let n = 0; [...list].sort((a, b) => b - a).forEach(pi => { const r = clip(S.paths[pi], inside, stepU, minU); if (r) { replacePath(pi, r); n++; } }); return n; }
   const nearBox = (pi, x0, y0, x1, y1) => { const bb = BZ.bbox([S.paths[pi]]); return bb && !(bb.x1 < x0 || bb.x0 > x1 || bb.y1 < y0 || bb.y0 > y1); };
   // ---------- state ----------
-  const SL = { list: [], merged: null, mode: null, a: null, b: null, plan: null }, PP = { pi: -1, lastT: 0, lastU: null }, DR = { pts: null }, BR = { a: null, b: null, plan: null }, RB = { px: 22, mode: 'all', at: null }, TH = { pi: -1, list: null }, CO = { region: null, sel: -1 }, CL = { pts: [] };
+  const SL = { list: [], merged: null, mode: null, a: null, b: null, plan: null }, PP = { pi: -1, lastT: 0, lastU: null }, DR = { pts: null }, BR = { a: null, b: null, plan: null }, RB = { px: 22, mode: 'all', at: null }, TH = { pi: -1, list: null }, CO = { region: null, sel: -1 }, CL = { mode: 'area', regs: [], pts: [], grow: false, box: null };
   // ================= gestures =================
   function down(e, p, u, base) { const g = Object.assign(base, { t4: tool, kind: 't4' }), tolU = tolT(e);
     if (tool === 'sel') { g.kind = 'tap'; g.tx = view.tx; g.ty = view.ty; return g; } // drag = move the picture, tap = pick
@@ -49,13 +58,13 @@ window.T4 = (() => {
     if (tool === 'rub') { g.snap = snap(); g.last = u; RB.at = u; g.erased = 0; S.paths.forEach((q, i) => { q._rk = BZ.length(q) + i * 1e-6; }); draw(); return g; }
     if (tool === 'cutout') { const n = hitPt(u, tolU * 0.7, isCut); if (n) { g.node = n; g.snap = snap(); CO.sel = n.pi; } else { const h = hitLine(u, tolU * 0.5, isCut); if (h) { g.seg = h; g.snap = snap(); } }
       focus = { pi: (g.node || g.seg || {}).pi, u }; draw(); return g; }
-    if (tool === 'clear') { let bi = -1, bd = tolU; CL.pts.forEach((q, i) => { const d = d2(q, u); if (d < bd) { bd = d; bi = i; } }); if (bi >= 0) g.cnode = bi; return g; }
+    if (tool === 'clear') { if (CL.mode === 'poly') { let bi = -1, bd = tolU; CL.pts.forEach((q, i) => { const d = d2(q, u); if (d < bd) { bd = d; bi = i; } }); if (bi >= 0) g.cnode = bi; } return g; }
     return g; }
   function move(g, p, u, e) {
     if (g.t4 === 'sel') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
     if (g.t4 === 'draw') { if (DR.pts && d2(u, DR.pts[DR.pts.length - 1]) * view.s > 1.5) DR.pts.push(u.slice()); draw(); return; }
     if (g.t4 === 'rub') { applyRub(g.last, u, g); g.last = u; RB.at = u; draw(); return; }
-    if (g.t4 === 'clear') { if (g.cnode != null) { CL.pts[g.cnode] = u.slice(); draw(); } return; }
+    if (g.t4 === 'clear') { if (g.cnode != null) CL.pts[g.cnode] = u.slice(); else CL.box = [g.u0, u.slice()]; draw(); return; }
     if (g.node) { if (!g.moving) { const nd = S.paths[g.node.pi].n[g.node.j]; g.moving = [nd, ...linked(g.node.pi, g.node.j)]; g.lastU = g.u0; }
       const dx = u[0] - g.lastU[0], dy = u[1] - g.lastU[1]; g.lastU = u; for (const m of g.moving) BZ.moveNode(m, dx, dy); draw(); return; }
     if (g.seg) { S.paths = BZ.clone(g.snap); BZ.bend(S.paths[g.seg.pi], g.seg.k, g.seg.t, u[0] - g.u0[0], u[1] - g.u0[1]); draw(); return; } }
@@ -69,7 +78,7 @@ window.T4 = (() => {
     if (g.t4 === 'brk') { if (!g.moved) brkTap(u, e); return; }
     if (g.t4 === 'thick') { if (!g.moved) { const h = hitEtch(u, tolU); TH.list = null; TH.pi = h ? h.pi : -1; focus = null; if (!h) toast('Tap right on a line'); panel(); draw(); } return; }
     if (g.t4 === 'cutout') { if (g.moved) return; if (g.seg || g.node) { CO.sel = (g.seg || g.node).pi; CO.region = null; panel(); draw(); return; } CO.sel = -1; findRegion(u); return; }
-    if (g.t4 === 'clear') { if (g.cnode != null) { if (!g.moved) { /* tap on a point: nothing */ } panel(); draw(); return; } if (!g.moved) { CL.pts.push(u.slice()); panel(); draw(); } return; } }
+    if (g.t4 === 'clear') { if (g.cnode != null) { panel(); draw(); return; } if (g.moved) { clBox(); return; } if (CL.mode === 'poly') { CL.pts.push(u.slice()); panel(); draw(); } else clTap(u); return; } }
   function cancelG(g) { if (g.t4 === 'draw') DR.pts = null; if (g.t4 === 'rub') RB.at = null; }
   // ================= Select (whole line) =================
   // a "whole line" = the tapped line plus any line that carries straight/smoothly on from its ends (a plank split at a junction)
@@ -160,37 +169,59 @@ window.T4 = (() => {
     S.paths.forEach(p => { if (p.cut) return; const o = LZ.widthOffs(p, lw); if (!o) return; const f = BZ.flatten(p, 0.3 * px); for (const d of o) { const q = LZ.offsetPoly(f, d / k, !!p.z); ctx.moveTo(q[0][0], q[0][1]); for (let i = 1; i < q.length; i++) ctx.lineTo(q[i][0], q[i][1]); } }); ctx.stroke(); }
   const plain = p => !p.cut && !LZ.widthOffs(p, S.lineMm);
   // ================= Cut out =================
-  function findRegion(u) { const e = S.paths.filter(p => p.n.length > 1); const bb = BZ.bbox(e); if (!bb) return; const pad = 4 / view.s, s = 1400 / Math.max(bb.w + 2 * pad, bb.h + 2 * pad), ox = bb.x0 - pad, oy = bb.y0 - pad;
+  function findRegion(u) { const r = regionAt(u); if (r.err) { CO.region = null; toast(r.err, r.long ? 4500 : 2600); panel(); draw(); return; } CO.region = { loop: r.loop, match: r.match, u }; panel(); draw(); }
+  // one raster of every line, reused while the lines don't change (so areas picked at different zooms line up)
+  let RG = null; const sigOf = () => { let t = S.paths.length + S.lineMm; for (const p of S.paths) for (const n of p.n) t += n.x * 1.3 + n.y * 0.7; return t; };
+  function grid() { const sig = sigOf(); if (RG && RG.sig === sig) return RG; const e = S.paths.filter(p => p.n.length > 1); const bb = BZ.bbox(e); if (!bb) return null; const pad = Math.max(bb.w, bb.h) * 0.02 + 1, s = 1400 / Math.max(bb.w + 2 * pad, bb.h + 2 * pad), ox = bb.x0 - pad, oy = bb.y0 - pad;
     const w = Math.ceil((bb.w + 2 * pad) * s) + 2, h = Math.ceil((bb.h + 2 * pad) * s) + 2, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.strokeStyle = '#000'; const sw = Math.max(2.2, S.lineMm / kmm() * s); g.lineWidth = sw; g.lineCap = g.lineJoin = 'round'; g.beginPath();
     for (const p of e) { const f = BZ.flatten(p, 0.4 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); } g.stroke();
     const id = g.getImageData(0, 0, w, h).data, ink = new Uint8Array(w * h); for (let i = 0; i < ink.length; i++) ink[i] = id[i * 4] < 128 ? 1 : 0;
-    const sx = Math.round((u[0] - ox) * s), sy = Math.round((u[1] - oy) * s); if (sx < 1 || sy < 1 || sx >= w - 1 || sy >= h - 1) { CO.region = null; toast('Tap inside an area that is closed in by lines'); panel(); draw(); return; }
-    if (ink[sy * w + sx]) { CO.region = null; toast('Tap inside the area, not on a line'); panel(); draw(); return; }
+    RG = { sig, s, ox, oy, w, h, sw, ink }; return RG; }
+  function regionAt(u) { const G = grid(); if (!G) return { err: 'Nothing to pick yet' }; const { s, ox, oy, w, h, sw, ink } = G;
+    const sx = Math.round((u[0] - ox) * s), sy = Math.round((u[1] - oy) * s); if (sx < 1 || sy < 1 || sx >= w - 1 || sy >= h - 1) return { err: 'Tap inside an area that is closed in by lines' };
+    if (ink[sy * w + sx]) return { err: 'Tap inside the area, not on a line' };
     const m = new Uint8Array(w * h), st = [sy * w + sx]; m[st[0]] = 1; let open = false, cnt = 0;
     while (st.length) { const i = st.pop(); cnt++; const x = i % w, y = (i - x) / w; if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { open = true; break; }
       for (const j of [i - 1, i + 1, i - w, i + w]) if (!m[j] && !ink[j]) { m[j] = 1; st.push(j); } }
-    if (open) { CO.region = null; toast('That area is not closed in - it reaches the outside. Close the gap with Break or Point to point first.', 4500); panel(); draw(); return; }
-    const loops = T.outerCut(m, w, h, sw / 2, 0).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy])); if (!loops.length) { CO.region = null; panel(); draw(); return; }
+    if (open) return { err: 'That area is not closed in - it reaches the outside. Close the gap with Break or Point to point first, or drag a box instead.', long: true };
+    const loops = T.outerCut(m, w, h, sw / 2, 0).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy])); if (!loops.length) return { err: 'Could not find that area' };
     loops.sort((a, b) => Math.abs(T.area(b)) - Math.abs(T.area(a))); const loop = loops[0], A = Math.abs(T.area(loop));
     // an existing closed line that already is this area's border (e.g. a window) is used as it is
     let match = -1, best = Infinity; S.paths.forEach((p, pi) => { if (!p.z || p.n.length < 2) return; const f = BZ.flatten(p, 0.5 / s); if (!BZ.inside(f, u)) return; const a = Math.abs(T.area(f)); if (Math.abs(a - A) / a < 0.12 && a < best) { best = a; match = pi; } });
-    CO.region = { loop, match, u }; panel(); draw(); }
+    return { loop, match, m, sig: G.sig, g: Math.max(S.lineMm / kmm() * 0.75, 2 / s) }; }
   function doCutOut() { const r = CO.region; if (!r) { toast('Tap inside an area first'); return; } pushUndo(); let pi;
     if (r.match >= 0) { S.paths[r.match].cut = true; delete S.paths[r.match].w; delete S.paths[r.match].dbl; pi = r.match; }
     else { const px = 1 / view.s, p = BZ.fromPolyline(r.loop, { closed: true, tol: Math.max(0.4, 0.8 * px), arm: 4 * px, corner: 40 }); if (!p) { undoSt.pop(); updUndo(); toast('Could not make that cut'); return; } p.cut = true; S.paths.push(p); pi = S.paths.length - 1; }
     S.cutOn = true; CO.region = null; CO.sel = pi; changed(); panel(); toast('Cut out made - it is cut before the outside. Drag its points to adjust.', 3500); }
   function makeEtch() { const p = S.paths[CO.sel]; if (!isCut(p)) return; pushUndo(); delete p.cut; CO.sel = -1; changed(); panel(); toast('That line is an etch line again'); }
   // ================= Clear space =================
-  function doClear() { if (CL.pts.length < 3) { toast('Tap at least 3 points round the area'); return; } const poly = CL.pts, inside = q => BZ.inside(poly, q);
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const q of poly) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
-    const snap0 = snap(), list = S.paths.map((p, i) => i).filter(pi => isEtch(S.paths[pi]) && nearBox(pi, x0, y0, x1, y1)), n = clipAll(list, inside, Math.max(0.3, 1.5 / view.s));
-    if (!n) { toast('No lines inside that area'); return; } undoSt.push(snap0); redoSt = []; CL.pts = []; changed(); panel(); toast(`Cleared - ${n} line${n > 1 ? 's' : ''} trimmed at the edge`); }
+  // Clear space: tap areas (shaded), drag a box, or (advanced) tap points round a polygon. Clear removes every etch line inside, cut exactly at the edge.
+  const polyBB = poly => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const q of poly) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); } return { x0, y0, x1, y1 }; };
+  const distPoly = (poly, q) => { let dm = Infinity; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) dm = Math.min(dm, BZ.segD(q, poly[j], poly[i])[0]); return dm; };
+  function clTap(u) { const G = grid(), pix = G ? Math.round((u[1] - G.oy) * G.s) * G.w + Math.round((u[0] - G.ox) * G.s) : -1; CL.regs = CL.regs.filter(r => r.kind !== 'face' || (G && r.sig === G.sig)); const hit = CL.regs.findIndex(r => r.kind === 'face' ? r.m[pix] === 1 : BZ.inside(r.poly, u)); if (hit >= 0) { CL.regs.splice(hit, 1); panel(); draw(); toast('Area taken off the selection'); return; }
+    const r = regionAt(u); if (r.err) { toast(r.err, 4000); return; } CL.regs.push({ kind: 'face', poly: r.loop, g: r.g, m: r.m, sig: r.sig, bb: polyBB(r.loop) }); panel(); draw(); }
+  function clBox() { const bx = CL.box; CL.box = null; if (!bx) return; const [a, b] = bx; if (Math.abs(a[0] - b[0]) * view.s < 12 || Math.abs(a[1] - b[1]) * view.s < 12) { draw(); return; }
+    const poly = [[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])], [Math.min(a[0], b[0]), Math.max(a[1], b[1])]];
+    CL.regs.push({ kind: 'box', poly, bb: polyBB(poly) }); panel(); draw(); }
+  function clRegions() { const regs = CL.regs.slice(); if (CL.mode === 'poly' && CL.pts.length >= 3) regs.push({ kind: 'poly', poly: CL.pts.slice(), bb: polyBB(CL.pts) }); return regs; }
+  function inReg(r, q) { if (q[0] < r.bb.x0 || q[0] > r.bb.x1 || q[1] < r.bb.y0 || q[1] > r.bb.y1) return false; return BZ.inside(r.poly, q); } // box / polygon: exactly at the edge
+  // tapped areas (on the line raster): open space inside a picked area is cleared; a line is cleared when there is picked area on
+  // every side of it (e.g. the cross between two picked panes), or - with "Include border lines" - picked area on any side (the frame)
+  function inFaces(faces, G, q) { const x = Math.round((q[0] - G.ox) * G.s), y = Math.round((q[1] - G.oy) * G.s); if (x < 0 || y < 0 || x >= G.w || y >= G.h) return false; const i = y * G.w + x, on = j => faces.some(r => r.m[j] === 1);
+    if (!G.ink[i]) return on(i); const R = Math.ceil(G.sw / 2) + 2; let a = 0, b = 0;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { if (dx * dx + dy * dy > R * R) continue; const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= G.w || yy >= G.h) continue; const j = yy * G.w + xx; if (G.ink[j]) continue; if (on(j)) a++; else b++; }
+    return CL.grow ? a > 0 : a > 0 && b === 0; }
+  function doClear() { const regs = clRegions(); if (!regs.length) { toast(CL.mode === 'poly' ? 'Tap at least 3 points round the area' : 'Tap inside an area first (or drag a box)'); return; }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of regs) { const p = r.kind === 'face' ? r.g : 0; x0 = Math.min(x0, r.bb.x0 - p); y0 = Math.min(y0, r.bb.y0 - p); x1 = Math.max(x1, r.bb.x1 + p); y1 = Math.max(y1, r.bb.y1 + p); }
+    const G = grid(), faces = regs.filter(r => r.kind === 'face' && G && r.sig === G.sig), geo = regs.filter(r => r.kind !== 'face'); if (faces.length < regs.filter(r => r.kind === 'face').length) { CL.regs = geo; panel(); draw(); toast('The lines changed - tap the areas again'); return; }
+    const inside = q => geo.some(r => inReg(r, q)) || (faces.length > 0 && inFaces(faces, G, q)), snap0 = snap(), list = S.paths.map((p, i) => i).filter(pi => isEtch(S.paths[pi]) && nearBox(pi, x0, y0, x1, y1)), n = clipAll(list, inside, Math.max(0.25, 1.2 / view.s), faces.length ? 2.5 / G.s : 0.3);
+    if (!n) { toast(CL.grow ? 'No lines in that area' : 'No lines inside that area - tick "Include border lines" to remove its outline too', 4500); return; } undoSt.push(snap0); redoSt = []; CL.regs = []; CL.pts = []; changed(); panel(); toast(`Cleared - ${n} line${n > 1 ? 's' : ''} removed or trimmed at the edge. Undo brings them back.`, 3500); }
   // ================= panel & paint =================
   const HINT = { p2p: 'Tap, tap, tap: straight lines point to point (they snap onto lines). Drag a line to bend it, drag a dot to move it. Double-tap or Done to finish.',
     draw: 'Draw with one finger. The line is smoothed and its ends snap onto nearby lines. Two fingers move the picture.',
     rub: 'Rub over lines to erase them. Tap a line to remove it up to the next junction.',
-    clear: 'Tap round the area to drop points (drag a point to move it). Then Clear removes every line inside.' };
+    clear: 'Tap inside an area to shade it, or drag a box. Then Clear removes every line inside.' };
   function panel() { if (!IDS.includes(tool)) return; const set = (id, h) => { const el = $(id); if (el) el.innerHTML = h; };
     if (tool === 'sel') { const has = SL.list.length > 0, brk = SL.mode === 'brk'; $('t4slActs').hidden = brk; $('t4slBrk').hidden = !brk;
       document.querySelectorAll('#t4slActs button').forEach(b => { b.disabled = !has; });
@@ -208,7 +239,10 @@ window.T4 = (() => {
       if (p) { $('t4w').value = p.w || S.lineMm; $('t4wn').value = (p.w || S.lineMm); $('t4dbl').checked = !!p.dbl; if (p.dbl) $('t4dd').value = p.dbl.toFixed(2); } $('t4w').min = S.lineMm; $('t4ddRow').hidden = !$('t4dbl').checked; }
     if (tool === 'cutout') { $('t4coGo').disabled = !CO.region; $('t4coEtch').hidden = !(CO.sel >= 0 && isCut(S.paths[CO.sel]));
       set('t4coHint', CO.region ? (CO.region.match >= 0 ? 'This closed line will become a cut hole. Tap ✂ Cut out.' : 'The orange area will be cut out. Tap ✂ Cut out.') : CO.sel >= 0 ? 'Cut line picked. Drag its points or bend it to adjust.' : 'Tap inside an area (a window, a gap) to cut it out. Drag any grey cut line or its points to adjust it.'); }
-    if (tool === 'clear') { $('t4clGo').disabled = CL.pts.length < 3; set('t4clHint', CL.pts.length ? `${CL.pts.length} point${CL.pts.length > 1 ? 's' : ''}. ${CL.pts.length < 3 ? 'Keep tapping round the area.' : 'Tap Clear to remove every line inside.'}` : HINT.clear); } }
+    if (tool === 'clear') { const regs = clRegions(), nf = regs.length; $('t4clGo').disabled = !nf; $('t4clBack').hidden = CL.mode !== 'poly'; { const gl = $('t4clGrow'); if (gl) { gl.checked = CL.grow; gl.parentNode.hidden = CL.mode === 'poly'; } } $('t4clNo').disabled = !nf && !CL.pts.length; document.querySelectorAll('[data-clmode]').forEach(b => b.classList.toggle('on', b.dataset.clmode === CL.mode));
+      const big = regs.some(r => r.kind === 'face' && (r.bb.x1 - r.bb.x0) * (r.bb.y1 - r.bb.y0) > 0.3 * (() => { const b = BZ.bbox(S.paths); return b ? b.w * b.h : Infinity; })());
+      set('t4clHint', CL.mode === 'poly' ? (CL.pts.length < 3 ? `Tap points round the area (${CL.pts.length} so far, at least 3). Drag a point to move it.` : `<b>${CL.pts.length}-point area shaded</b> - tap Clear.`) :
+        !nf ? 'Tap inside an area (a window, a pane) to shade it. Tap more areas to add them, tap a shaded one to take it off. Or drag a box.' : `<b>${nf} area${nf > 1 ? 's' : ''} selected</b> - tap Clear.${CL.grow ? ' Border lines are included.' : ' Border lines are kept.'}${big ? ' <span class="warn">That is a big area - check the shading.</span>' : ''}`); } }
   function paint(px) { const r = 4.5 * px;
     if (flash && Date.now() < flash.until && S.paths.includes(flash.p)) { ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 3 * px; ctx.beginPath(); tracePath(flash.p); ctx.stroke(); }
     if (focus && S.paths[focus.pi] && (tool === 'p2p' || tool === 'cutout')) { const R = 120 * px; S.paths[focus.pi].n.forEach(nd => { if (Math.hypot(nd.x - focus.u[0], nd.y - focus.u[1]) > R) return; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1d3557'; ctx.lineWidth = 1.3 * px; ctx.beginPath(); ctx.arc(nd.x, nd.y, r, 0, 7); ctx.fill(); ctx.stroke(); }); }
@@ -227,13 +261,15 @@ window.T4 = (() => {
     if (tool === 'thick' && TH.pi >= 0 && S.paths[TH.pi]) { ctx.strokeStyle = 'rgba(25,113,194,0.55)'; ctx.lineWidth = Math.max(6 * px, ((S.paths[TH.pi].w || S.lineMm) + (S.paths[TH.pi].dbl || 0)) / kmm() + 4 * px); ctx.beginPath(); tracePath(S.paths[TH.pi]); ctx.stroke(); }
     if (tool === 'cutout') { if (CO.region) { const l = CO.region.loop; ctx.fillStyle = 'rgba(232,89,12,0.25)'; ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2.5 * px; ctx.beginPath(); ctx.moveTo(l[0][0], l[0][1]); for (const q of l) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.fill(); ctx.stroke(); }
       if (CO.sel >= 0 && isCut(S.paths[CO.sel])) { ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 2.6 * px; ctx.beginPath(); tracePath(S.paths[CO.sel]); ctx.stroke(); } }
-    if (tool === 'clear' && CL.pts.length) { ctx.fillStyle = 'rgba(224,49,49,0.14)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2 * px; ctx.beginPath(); ctx.moveTo(CL.pts[0][0], CL.pts[0][1]); for (const q of CL.pts) ctx.lineTo(q[0], q[1]); if (CL.pts.length > 2) ctx.closePath(); ctx.fill(); ctx.stroke();
-      CL.pts.forEach((q, i) => { ctx.fillStyle = i === 0 ? '#e03131' : '#fff'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.8 * px; ctx.beginPath(); ctx.arc(q[0], q[1], (i === 0 ? 7 : 6) * px, 0, 7); ctx.fill(); ctx.stroke(); }); } }
+    if (tool === 'clear') { ctx.lineJoin = 'round'; for (const r of clRegions()) { ctx.fillStyle = 'rgba(224,49,49,0.24)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = (r.kind === 'face' && CL.grow ? 4 : 2) * px; ctx.setLineDash(r.kind === 'face' && !CL.grow ? [5 * px, 4 * px] : []);
+        ctx.beginPath(); ctx.moveTo(r.poly[0][0], r.poly[0][1]); for (const q of r.poly) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); }
+      if (CL.box) { const [a, b] = CL.box; ctx.fillStyle = 'rgba(224,49,49,0.18)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2 * px; ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); }
+      if (CL.mode === 'poly') CL.pts.forEach((q, i) => { ctx.fillStyle = 'rgba(224,49,49,0.18)'; ctx.beginPath(); ctx.arc(q[0], q[1], 14 * px, 0, 7); ctx.fill(); ctx.fillStyle = i === 0 ? '#e03131' : '#fff'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.8 * px; ctx.beginPath(); ctx.arc(q[0], q[1], (i === 0 ? 7 : 6) * px, 0, 7); ctx.fill(); ctx.stroke(); }); } }
   function reset() { SL.list = SL.list.filter(i => S.paths[i]); if (SL.list.length) { const c = chainOf(SL.list[0]); SL.list = c.list; SL.merged = c.merged; } else SL.merged = null; SL.mode = null; SL.a = SL.b = SL.plan = null; if (PP.live && PP.pi >= 0 && !S.paths[PP.pi]) PP.live = false; if (PP.live && PP.pi >= 0 && S.paths[PP.pi] && S.paths[PP.pi].n.length < 1) PP.live = false; BR.a = BR.b = BR.plan = null; CO.region = null; if (TH.pi >= S.paths.length) TH.pi = -1; if (CO.sel >= S.paths.length) CO.sel = -1; focus = null; panel(); }
-  function onTool(t, prev) { if (t !== 'sel') { SL.list = []; SL.merged = null; } SL.mode = null; SL.a = SL.b = SL.plan = null; if (prev === 'p2p' && t !== 'p2p' && PP.live) p2pDone(); BR.a = BR.b = BR.plan = null; CO.region = null; focus = null; if (t !== 'thick') TH.pi = -1; if (t !== 'clear') CL.pts = []; DR.pts = null; RB.at = null; panel(); }
+  function onTool(t, prev) { if (t !== 'sel') { SL.list = []; SL.merged = null; } SL.mode = null; SL.a = SL.b = SL.plan = null; if (prev === 'p2p' && t !== 'p2p' && PP.live) p2pDone(); BR.a = BR.b = BR.plan = null; CO.region = null; focus = null; if (t !== 'thick') TH.pi = -1; if (t !== 'clear') { CL.pts = []; CL.regs = []; CL.box = null; } DR.pts = null; RB.at = null; panel(); }
   function wire() { const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
     on('t4ppDone', p2pDone); on('t4ppUndo', undo); on('t4drUndo', undo); on('t4brOk', brkConfirm); on('t4brNo', () => { BR.a = BR.b = BR.plan = null; panel(); draw(); }); on('t4rbUndo', undo);
-    on('t4coGo', doCutOut); on('t4coEtch', makeEtch); on('t4clGo', doClear); on('t4clBack', () => { CL.pts.pop(); panel(); draw(); }); on('t4clNo', () => { CL.pts = []; panel(); draw(); });
+    on('t4coGo', doCutOut); on('t4coEtch', makeEtch); on('t4clGo', doClear); document.querySelectorAll('[data-clmode]').forEach(b => b.onclick = () => { CL.mode = b.dataset.clmode; CL.pts = []; panel(); draw(); }); { const gr = $('t4clGrow'); if (gr) gr.onchange = () => { CL.grow = gr.checked; panel(); draw(); }; } on('t4clBack', () => { CL.pts.pop(); panel(); draw(); }); on('t4clNo', () => { CL.regs = []; CL.box = null; CL.pts = []; panel(); draw(); });
     on('t4thAll', () => applyThick(true)); on('t4slDel', () => selAct('del')); on('t4slBrkB', () => selAct('brk')); on('t4slTh', () => selAct('thick')); on('t4slCut', () => selAct('cut'));
     on('t4slOk', selConfirm); on('t4slNo', () => { SL.mode = null; SL.a = SL.b = SL.plan = null; panel(); draw(); });
     if (typeof tool !== 'undefined' && tool === 'move') setTool('sel'); on('t4coOut', () => WP.openMenu('sec-size'));
@@ -246,5 +282,5 @@ window.T4 = (() => {
       const stepDD = s => { let v = Math.round(((+dd.value || 0) + s) * 100) / 100; v = Math.max(0.01, Math.min(20, v)); dd.value = v.toFixed(2); if (dbl.checked) applyThick(false); };
       on('t4ddM', () => stepDD(-0.01)); on('t4ddP', () => stepDD(0.01)); dd.onchange = () => stepDD(0); } }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  return { SL, chainOf, selAct, selConfirm, IDS, down, move, up, cancelG, paint, paintThick, plain, panel, reset, onTool, clip, hitEtch, PP, BR, RB, TH, CO, CL, p2pDone, brkConfirm, doCutOut, doClear, applyThick, findRegion };
+  return { regionAt, clRegions, SL, chainOf, selAct, selConfirm, IDS, down, move, up, cancelG, paint, paintThick, plain, panel, reset, onTool, clip, hitEtch, PP, BR, RB, TH, CO, CL, p2pDone, brkConfirm, doCutOut, doClear, applyThick, findRegion };
 })();

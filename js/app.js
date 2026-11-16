@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4.1';
+const APP_VERSION = 'v4.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -483,7 +483,7 @@ $('newBtn').onclick = async () => { await saveNow(); $('panelFile').click(); };
 // ---------- help ----------
 const HELP = [
   ['🖼️', 'Open a line drawing', 'Open a PNG/JPG line drawing or an SVG. Black lines are what the laser etches; the <b>grey line</b> round the outside is where it cuts the piece out. Pick a tool at the bottom. <b>Two fingers</b> always move and zoom the picture; <b>⤢ Fit</b> re-centres it.'],
-  ['✏️', 'The 8 tools (tap one, tap again to put it away)', '<b>Select</b>: tap a line - the whole line turns blue - then <b>Delete line</b>, <b>Break</b> (tap where it stops and starts again), <b>Thickness</b> or <b>Make cut</b>.<br><b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area, tap Cut out - it becomes a hole.<br><b>Clear space</b>: tap points round an area, tap Clear - every line inside goes.'],
+  ['✏️', 'The 8 tools (tap one, tap again to put it away)', '<b>Select</b>: tap a line - the whole line turns blue - then <b>Delete line</b>, <b>Break</b> (tap where it stops and starts again), <b>Thickness</b> or <b>Make cut</b>.<br><b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area, tap Cut out - it becomes a hole.<br><b>Clear space</b>: tap inside an area (e.g. a window pane) - it turns red. Tap more areas to add them, or drag a box. Tick <i>Include border lines</i> to remove the frame too. Then tap Clear.'],
   ['☰', 'Menu and Export', '<b>☰ Menu</b> holds the picture, trace, size, laser, sheet and <b>Add shape</b>. <b>Export</b> (top bar) makes the LaserGRBL files. <b>↶ Undo</b> undoes anything.'],
 ];
 let helpI = 0;

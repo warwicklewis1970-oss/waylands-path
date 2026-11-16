@@ -145,3 +145,7 @@ body.menuOpen #panel{transform:none}
 #updBar{top:calc(var(--hdr) + 6px);bottom:auto;font-size:16px;font-weight:600;padding:8px 8px 8px 16px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:60}
 #updBar button{min-height:46px;font-size:16px;font-weight:700;background:#111;color:#fff;border:0}
 @media (max-width:860px){.tool span{font-size:10px}}
+/* v4.2 Clear space */
+.clseg{display:flex;margin-bottom:6px}.clseg button{flex:1}
+.clgrow{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:15px;min-height:40px}
+.clgrow input{width:24px;height:24px}
