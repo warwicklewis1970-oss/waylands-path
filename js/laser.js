@@ -5,24 +5,53 @@ const LZ = (() => {
   const R3 = v => (Math.round(v * 1000) / 1000).toString(), f2 = v => (Math.round(v * 100) / 100).toString();
   const MODES = [['ltl', 'Line To Line'], ['dith', 'Dithering'], ['vec', 'Vector']], TAG = { ltl: 'LTL', dith: 'DITH', vec: 'VEC' };
   const DEF = { engrave: { mode: 'vec', P: 25, F: 3000, passes: 1 }, cut: { mode: 'vec', P: 100, F: 1000, passes: 3 } };
-  // frame: design units -> mm. k = mm per unit. x0/y1 = design-unit left / bottom of the design area.
-  function frame(art, cut, widthMm) { const ab = G.bbox(art); if (!ab) return null; const k = widthMm / Math.max(ab.w, 1e-9), all = G.bbox(art.concat(cut || []));
+  // frame: design units -> mm. k = mm per unit. Width = the whole design (etch lines and cut line together).
+  function frame(art, cut, widthMm) { const all = BZ.bbox(art.concat(cut || [])); if (!all) return null; const k = widthMm / Math.max(all.w, 1e-9), ab = BZ.bbox(art) || all;
     return { k, x0: all.x0, y0: all.y0, x1: all.x1, y1: all.y1, W: all.w * k, H: all.h * k, artW: ab.w * k, artH: ab.h * k }; }
   const toMmSvg = (fr, p) => p.map(([x, y]) => [(x - fr.x0) * fr.k, (y - fr.y0) * fr.k]); // y down, page top-left
   const toMmG = (fr, p) => p.map(([x, y]) => [(x - fr.x0) * fr.k, (fr.y1 - y) * fr.k]); // y up, bottom-left = 0,0
+  // ---- toolpath order: chain lines that meet end to end, nearest-neighbour, then 2-opt (with reversing) to cut travel ----
+  const dd = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  function chainPolys(polys) { const key = q => Math.round(q[0] * 100) + ',' + Math.round(q[1] * 100), ends = new Map();
+    const P = polys.map(p => ({ p: p.slice(), alive: true })); const closed = o => o.p.length > 2 && dd(o.p[0], o.p[o.p.length - 1]) < 0.01;
+    const add = (o, e) => { const k = key(e ? o.p[o.p.length - 1] : o.p[0]); if (!ends.has(k)) ends.set(k, []); ends.get(k).push(o); };
+    P.forEach(o => { if (!closed(o)) { add(o, 0); add(o, 1); } });
+    for (const [k, list] of ends) { if (list.length !== 2 || list[0] === list[1] || !list[0].alive || !list[1].alive) continue; let [a, b] = list;
+      if (key(a.p[a.p.length - 1]) !== k) a.p.reverse(); if (key(b.p[0]) !== k) b.p.reverse(); if (key(a.p[a.p.length - 1]) !== k || key(b.p[0]) !== k) continue;
+      a.p = a.p.concat(b.p.slice(1)); b.alive = false; b.p = a.p; for (const [k2, l2] of ends) { const i = l2.indexOf(b); if (i >= 0) l2[i] = a; } }
+    return P.filter(o => o.alive).map(o => o.p); }
+  function orderPolys(polys, start = [0, 0]) { const left = polys.map(p => ({ p, closed: p.length > 2 && dd(p[0], p[p.length - 1]) < 0.01 })), out = []; let cur = start;
+    while (left.length) { let bi = 0, bd = Infinity, rev = false, rot = -1;
+      left.forEach((o, i) => { if (o.closed) { o.p.forEach((q, j) => { const d = dd(cur, q); if (d < bd) { bd = d; bi = i; rev = false; rot = j; } }); }
+        else { const d0 = dd(cur, o.p[0]), d1 = dd(cur, o.p[o.p.length - 1]); if (d0 < bd) { bd = d0; bi = i; rev = false; rot = -1; } if (d1 < bd) { bd = d1; bi = i; rev = true; rot = -1; } } });
+      const o = left.splice(bi, 1)[0]; let p = o.p; if (rot > 0) { const q = p.slice(0, -1); p = q.slice(rot).concat(q.slice(0, rot)); p.push(p[0]); } else if (rev) p = p.slice().reverse();
+      out.push(p); cur = p[p.length - 1]; }
+    // 2-opt: reversing a run of lines (and each line in it) when that shortens the jumps
+    const n = out.length, t0 = Date.now(); if (n > 3) { let better = true, guard = 0;
+      while (better && guard++ < 30 && Date.now() - t0 < 1500) { better = false;
+        for (let i = 0; i < n - 1; i++) { const A = i ? out[i - 1][out[i - 1].length - 1] : start;
+          for (let j = i + 1; j < n; j++) { const si = out[i][0], ej = out[j][out[j].length - 1], B = j < n - 1 ? out[j + 1][0] : null;
+            const before = dd(A, si) + (B ? dd(ej, B) : 0), after = dd(A, ej) + (B ? dd(si, B) : 0);
+            if (after < before - 1e-6) { const seg = out.slice(i, j + 1).reverse().map(p => p.slice().reverse()); out.splice(i, j - i + 1, ...seg); better = true; } } } } }
+    return out; }
+  function travel(polys, start = [0, 0]) { let t = 0, cur = start; for (const p of polys) { t += dd(cur, p[0]); cur = p[p.length - 1]; } return t; }
+  // Bezier paths -> polylines in laser mm (y up, 0,0 = bottom-left), curves flattened to 0.02 mm
+  const polysG = (fr, paths) => paths.map(p => toMmG(fr, BZ.flatten(p, 0.02 / fr.k))).filter(p => p.length > 1);
+  // Vector G-code. Every jump between lines: M5 (laser off) -> G0 rapid with S0 -> M4 S0, then G1 burns at the step power.
   function vecG(fr, paths, b, smax, title) { const Smax = Math.round(smax * b.P / 100), W = fr.W, H = fr.H;
     const cx = v => R3(Math.min(W, Math.max(0, v))), cy = v => R3(Math.min(H, Math.max(0, v)));
-    const L = [`; Waylands Path ${String(title).replace(/[^\w .-]/g, '').slice(0, 30)}`, `; F${b.F} S${Smax} of ${smax} x${b.passes}`, `; area 0,0 to ${f2(W)},${f2(H)} mm`, 'G90', 'G21', 'M5', 'G0 X0 Y0', 'M4 S0'];
-    const polys = G.order(paths.map(p => toMmG(fr, p)).filter(p => p.length > 1)); let first = true;
+    const polys = orderPolys(chainPolys(polysG(fr, paths))), tr = travel(polys);
+    const L = [`; Waylands Path ${String(title).replace(/[^\w .-]/g, '').slice(0, 30)}`, `; F${b.F} S${Smax} of ${smax} x${b.passes}`, `; area 0,0 to ${f2(W)},${f2(H)} mm`,
+      `; ${polys.length} strokes, laser off (M5) for every move between strokes`, 'G90', 'G21', 'M5', 'G0 X0 Y0 S0']; let first = true;
     for (let k = 0; k < b.passes; k++) { if (b.passes > 1) L.push(`; pass ${k + 1}`);
-      for (const pl of polys) { L.push(`G0 X${cx(pl[0][0])} Y${cy(pl[0][1])} S0`);
+      let at = null; for (const pl of polys) { if (!at || dd(at, pl[0]) > 0.01) L.push('M5', `G0 X${cx(pl[0][0])} Y${cy(pl[0][1])} S0`, 'M4 S0'); at = pl[pl.length - 1];
         for (let i = 1; i < pl.length; i++) { L.push(`G1 X${cx(pl[i][0])} Y${cy(pl[i][1])} S${Smax}${first ? ` F${b.F}` : ''}`); first = false; } } }
-    L.push('M5', 'G0 X0 Y0'); return L.join('\n') + '\n'; }
+    L.push('M5', 'G0 X0 Y0 S0'); const out = L.join('\n') + '\n'; vecG.last = { strokes: polys.length, travelMm: tr }; return out; }
   // raster of the lines (stroked at lineMm) on the same frame, 10 px/mm by default
   function raster(fr, paths, lineMm, pxmm) { const pw = Math.max(1, Math.ceil(fr.W * pxmm)), ph = Math.max(1, Math.ceil(fr.H * pxmm));
     const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, pw, ph);
     c.strokeStyle = '#000'; c.lineWidth = Math.max(1, lineMm * pxmm); c.lineCap = c.lineJoin = 'round'; c.beginPath();
-    for (const p of paths) { const q = toMmSvg(fr, p); c.moveTo(q[0][0] * pxmm, q[0][1] * pxmm); for (let i = 1; i < q.length; i++) c.lineTo(q[i][0] * pxmm, q[i][1] * pxmm); if (q.length === 1) c.lineTo(q[0][0] * pxmm + 0.01, q[0][1] * pxmm); }
+    for (const p0 of paths) { const q = toMmSvg(fr, BZ.flatten(p0, 0.05 / fr.k)); c.moveTo(q[0][0] * pxmm, q[0][1] * pxmm); for (let i = 1; i < q.length; i++) c.lineTo(q[i][0] * pxmm, q[i][1] * pxmm); if (q.length === 1) c.lineTo(q[0][0] * pxmm + 0.01, q[0][1] * pxmm); }
     c.stroke(); return { d: c.getImageData(0, 0, pw, ph).data, pw, ph }; }
   function dither(d, pw, ph) { const g = new Float32Array(pw * ph); for (let i = 0; i < g.length; i++) g[i] = d[i * 4];
     for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) { const i = y * pw + x, o = g[i], nv = o < 128 ? 0 : 255, e = o - nv; g[i] = nv;
@@ -44,11 +73,12 @@ const LZ = (() => {
         for (const [a, bb, v] of order) { const ex = (fwd ? bb : a) * mm; if (v === 0 && bb - a >= gap) L.push(`G0 X${cx(ex)} S0`); else { L.push(`G1 X${cx(ex)} S${v}${first ? ` F${b.F}` : ''}`); first = false; } } } }
     L.push('M5', 'G0 X0 Y0'); return L.join('\n') + '\n'; }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const dStr = q => 'M' + q.map(([x, y]) => `${R3(x)} ${R3(y)}`).join('L');
+  const dStr = (fr, p) => { const m = q => `${R3((q[0] - fr.x0) * fr.k)} ${R3((q[1] - fr.y0) * fr.k)}`, n = p.n; if (!n.length) return '';
+    let d = 'M' + m([n[0].x, n[0].y]); for (let k = 0; k < BZ.nseg(p); k++) { const s = BZ.seg(p, k); d += s.line ? 'L' + m(s.C[3]) : 'C' + m(s.C[1]) + ' ' + m(s.C[2]) + ' ' + m(s.C[3]); } return d + (p.z ? 'Z' : ''); };
   // SVG in true mm: width/height in mm, viewBox 0 0 W H, so LaserGRBL and Inkscape read it 1:1
   function svg(fr, groups, title) { const W = f2(fr.W), H = f2(fr.H);
     return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">\n<title>${esc(title)}</title>\n` +
-      groups.map(g => `<g id="${g.id}" fill="none" stroke="${g.color}" stroke-width="${f2(g.width)}" stroke-linecap="round" stroke-linejoin="round">\n${g.paths.map(p => `<path d="${dStr(toMmSvg(fr, p))}"/>`).join('\n')}\n</g>`).join('\n') + '\n</svg>\n'; }
+      groups.map(g => `<g id="${g.id}" fill="none" stroke="${g.color}" stroke-width="${f2(g.width)}" stroke-linecap="round" stroke-linejoin="round">\n${g.paths.map(p => `<path d="${dStr(fr, p)}"/>`).join('\n')}\n</g>`).join('\n') + '\n</svg>\n'; }
   const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
   function makeZip(files) { // plain "stored" zip: opens in Windows Explorer with no extra software
@@ -85,5 +115,5 @@ const LZ = (() => {
     if (steps.length > 1) L.push('Burn step 1 first, then step 2 (the cut) without moving the material or the laser origin.', '');
     L.push(`Also included: ${svgName} (all lines in mm, cut in red) and one SVG per step, for Inkscape or LaserGRBL's SVG import.`, 'Made with Waylands Path.');
     return L.join('\r\n') + '\r\n'; }
-  return { MODES, TAG, DEF, frame, vecG, rasterG, svg, makeZip, crc32, build, tag, toMmSvg, toMmG };
+  return { chainPolys, orderPolys, travel, polysG, MODES, TAG, DEF, frame, vecG, rasterG, svg, makeZip, crc32, build, tag, toMmSvg, toMmG };
 })();

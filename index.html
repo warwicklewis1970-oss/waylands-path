@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Waylands Path</title>
-<meta name="description" content="Turn a photo, drawing or messy SVG into clean laser lines, tidy them up, and export LaserGRBL files.">
+<meta name="description" content="Turn a line drawing or messy SVG into clean laser lines and a cut line, fix them like Inkscape, and export LaserGRBL files.">
 <meta name="theme-color" content="#16232b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -16,9 +16,9 @@
   <div class="hcard">
     <img src="icons/icon.svg" alt="" class="hlogo">
     <h1 class="htitle">Waylands Path</h1>
-    <div class="hsub">Photo, drawing or SVG → clean laser lines</div>
+    <div class="hsub">Line drawing or SVG → clean laser lines</div>
     <div class="hbtns">
-      <label class="hb primary filebtn">📷 Open photo or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
+      <label class="hb primary filebtn">🖼️ Open line drawing or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
       <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
       <button id="homeHelp" class="hb">? How it works</button>
     </div>
@@ -41,74 +41,86 @@
     <canvas id="stage" aria-label="Design"></canvas>
     <div id="stats" class="stats"></div>
     <div id="busy" class="busy" hidden>Tracing…</div>
-    <div id="empty" class="empty"><label class="filebtn big">📷 Open photo or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+    <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
   </section>
   <div id="toolDock">
     <div id="tools" role="toolbar" aria-label="Tools">
       <button data-tool="move" class="tool on" title="Move and zoom the view">✋<span>Move</span></button>
-      <button data-tool="erase" class="tool" title="Erase lines">⌫<span>Erase</span></button>
-      <button data-tool="draw" class="tool" title="Draw a new line">✎<span>Draw</span></button>
-      <button data-tool="join" class="tool" title="Join loose ends">🔗<span>Join</span></button>
-      <button data-tool="points" class="tool" title="Move single points">⦿<span>Points</span></button>
-      <button data-tool="select" class="tool" title="Drag a box to select points">⬚<span>Select</span></button>
+      <button data-tool="nodes" class="tool" title="Edit points, like Inkscape's node tool">⦿<span>Nodes</span></button>
+      <button data-tool="pen" class="tool" title="Draw a new line">✒<span>Pen</span></button>
+      <button data-tool="erase" class="tool" title="Delete a line">⌫<span>Delete</span></button>
+      <button data-tool="skip" class="tool" title="Make a line pass behind something">⤫<span>Skip</span></button>
     </div>
     <div id="toolOpts">
-      <div data-opts="move" class="topts">Drag to move · pinch or mouse wheel to zoom. Pick a tool to edit.</div>
-      <div data-opts="erase" class="topts" hidden>
-        <div class="seg"><button id="eraseTap" class="on">Tap a line</button><button id="eraseBrush">Brush</button></div>
-        <label class="bsz" id="brushWrap" hidden><span>Size</span><input type="range" id="brushSize" min="6" max="60" value="22"></label>
-        <span class="tip" id="eraseTip">Tap a line to delete it. Drag moves the view.</span>
+      <div data-opts="move" class="topts">Drag to move · pinch or mouse wheel to zoom. Pick a tool to edit. Two fingers always move the view.</div>
+      <div data-opts="nodes" class="topts nopts" hidden>
+        <div class="selinfo" id="selInfo">Tap a line to show its points</div>
+        <div class="nbtns">
+          <button id="nCorner" data-needsel title="Sharp corner point">◆<span>Sharp</span></button>
+          <button id="nSmooth" data-needsel title="Smooth point">●<span>Smooth</span></button>
+          <button id="nLine" data-needsel title="Make the piece straight">／<span>Straight</span></button>
+          <button id="nCurve" data-needsel title="Make the piece a curve">◠<span>Curve</span></button>
+          <button id="nAdd" data-needsel title="Add a point">＋<span>Point</span></button>
+          <button id="nDel" data-needsel title="Delete point (shape kept)">−<span>Point</span></button>
+          <button id="nBreak" data-needsel title="Break the line at the point">✂<span>Break</span></button>
+          <button id="nJoin" data-needsel title="Join two ends (or run one end on to the next line)">⊶<span>Join</span></button>
+          <button id="nSeg" data-needsel class="danger" title="Delete the piece between two picked points">✕<span>Piece</span></button>
+        </div>
+        <details class="more"><summary>More</summary>
+          <div class="nudge"><button data-nudge="-1,0" aria-label="Nudge left">◀</button><button data-nudge="0,-1" aria-label="Nudge up">▲</button><button data-nudge="0,1" aria-label="Nudge down">▼</button><button data-nudge="1,0" aria-label="Nudge right">▶</button>
+            <select id="nudgeMm" aria-label="Nudge step"><option value="0.1">0.1 mm</option><option value="0.5" selected>0.5 mm</option><option value="1">1 mm</option></select></div>
+          <div class="row"><button id="nStraight" class="grow" title="Straight, and level/upright if nearly so">⟂ Straighten level / upright</button><button id="nAll" class="grow">Pick whole line</button></div>
+        </details>
       </div>
-      <div data-opts="draw" class="topts" hidden>Draw with one finger (or the mouse). Lines are smoothed and snap to loose ends. Two fingers move the view.</div>
-      <div data-opts="join" class="topts" hidden><span class="tip">Drag from one loose end (orange dot) to another.</span><button id="joinAuto2" class="accent">Join gaps</button></div>
-      <div data-opts="points select" class="topts ptopts" hidden>
-        <div class="tip" id="ptTip">Tap a point to pick it, then drag it or use the arrows.</div>
-        <div class="nudge"><button data-nudge="-1,0" aria-label="Nudge left">◀</button><button data-nudge="0,-1" aria-label="Nudge up">▲</button><button data-nudge="0,1" aria-label="Nudge down">▼</button><button data-nudge="1,0" aria-label="Nudge right">▶</button>
-          <select id="nudgeMm" aria-label="Nudge step"><option value="0.1">0.1 mm</option><option value="0.5" selected>0.5 mm</option><option value="1">1 mm</option></select></div>
-        <div class="ptbtns"><button id="ptAdd">＋ Add points</button><button id="ptFit" title="Snap the picked points onto the grey edge">🧲 Fit to edge</button><button id="ptReduce">− Reduce points</button><button id="ptDel" class="danger">✕ Delete point</button></div>
-        <div class="selinfo" id="selInfo">No points picked</div>
+      <div data-opts="pen" class="topts" hidden><span class="tip">Tap for a sharp point · press and drag for a curve · tap the first point to close. Snaps to points and lines.</span><button id="penBack">↶ Last point</button><button id="penDone" class="accent">✓ Done</button></div>
+      <div data-opts="erase" class="topts" hidden>
+        <div class="seg"><button id="delStretch" class="on">To the junctions</button><button id="delWhole">Whole line</button></div>
+        <span class="tip" id="delTip">Tap a line: it is removed up to the junction each side.</span>
+      </div>
+      <div data-opts="skip" class="topts" hidden>
+        <div class="seg"><button id="skipSkip" class="on">Skip over</button><button id="skipCont">Continue across</button></div>
+        <span class="tip" id="skipTip"></span>
       </div>
     </div>
   </div>
   <aside id="panel">
     <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
-      <div class="row"><label class="filebtn grow accent">📷 Open photo, PNG, JPG or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
       <label class="chk"><input type="checkbox" id="showPhoto" checked>Show the picture faintly behind the lines</label>
-      <label class="chk"><input type="checkbox" id="showGuide" checked>Show the grey edge guide (never burned)</label>
-      <label class="chk"><input type="checkbox" id="snapGuide">Draw, Join and Points snap to the grey edge</label>
-      <div class="hint" id="guideInfo"></div>
       <div class="hint" id="srcInfo">No picture yet.</div>
+      <div class="hint">Made for line drawings: AI line art, logos, colouring-page pictures. Photos are not traced.</div>
     </div></details>
     <details name="acc" id="sec-trace"><summary>2 · Trace</summary><div class="body">
-      <div class="seg wide2"><button id="modeLines" class="on">Lines</button><button id="modeOutline">Outlines</button><button id="modeOutside">Outside edge</button></div>
-      <div class="hint" id="modeHint"></div>
       <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
-      <label class="rg"><span>Remove specks</span><input type="range" id="specks" min="0" max="10" step="1" value="3"><output id="specksOut">3</output></label>
-      <div class="g2">
-        <label><span>Picture is</span><select id="kind"><option value="auto">Auto</option><option value="photo">A photo</option><option value="drawing">A drawing / logo</option></select></label>
-        <label class="chk"><input type="checkbox" id="invert">Light lines on dark</label>
-      </div>
+      <label class="rg"><span>Corners</span><input type="range" id="corners" min="1" max="10" step="1" value="5"><output id="cornersOut">5</output></label>
+      <div class="hint">Detail: higher keeps short bits, lower clears specks. Corners: higher finds more sharp corners.</div>
       <div class="hint" id="traceInfo"></div>
+      <details class="adv"><summary>Advanced</summary>
+        <label class="chk"><input type="checkbox" id="straighten" checked>Make nearly level / upright lines exactly straight</label>
+        <label class="chk"><input type="checkbox" id="invert">Light lines on a dark background</label>
+        <div class="row"><button id="retraceBtn" class="grow">↻ Trace again</button></div>
+      </details>
       <div class="hint">Moving these re-traces the picture and replaces your edits (Undo brings them back).</div>
     </div></details>
     <details name="acc" id="sec-tidy"><summary>3 · Tidy up</summary><div class="body">
       <div class="hint" id="tidyCount"></div>
-      <div class="row"><button id="smoothBtn" class="grow">〰 Smooth / simplify</button></div>
-      <div class="row"><label class="grow"><span>Join gaps up to</span><input type="number" id="joinMm" inputmode="decimal" min="0.1" max="20" step="any" value="1.5"><span>mm</span></label><button id="joinAuto" class="accent">🔗 Join gaps</button></div>
-      <div class="row"><label class="grow"><span>Stray bits under</span><input type="number" id="shortMm" inputmode="decimal" min="0.1" max="100" step="any" value="2"><span>mm</span></label><button id="shortBtn" class="accent">🧹 Remove</button></div>
-      <div class="hint" id="tidyOut"></div>
+      <div class="row"><label class="grow"><span>Close gaps up to</span><input type="number" id="gapMm" inputmode="decimal" min="0.1" max="20" step="any" value="1.5"><span>mm</span></label><button id="gapBtn" class="accent">🔗 Close gaps</button></div>
+      <div class="row"><button id="overlapBtn" class="grow">⧉ Remove doubled-up lines</button></div>
+      <div class="row"><label class="grow"><span>Stray bits under</span><input type="number" id="shortMm" inputmode="decimal" min="0.1" max="100" step="any" value="2"><span>mm</span></label><button id="shortBtn">🧹 Remove</button></div>
     </div></details>
-    <details name="acc" id="sec-size"><summary>4 · Size &amp; outer cut</summary><div class="body">
+    <details name="acc" id="sec-size"><summary>4 · Size &amp; cut</summary><div class="body">
       <div class="g2">
         <label><span>Width (mm)</span><input type="number" id="widthMm" inputmode="decimal" min="5" max="2000" step="any" value="150"></label>
         <label><span>Height</span><output id="heightOut">–</output></label>
         <label><span>Line width (mm)</span><input type="number" id="lineMm" inputmode="decimal" min="0.05" max="5" step="any" value="0.3"></label>
       </div>
-      <div class="hint">Width is the line art. Height follows (aspect kept). Line width is for the SVG and the Line To Line / Dithering modes.</div>
-      <label class="chk big"><input type="checkbox" id="cutOn">Outer cut (cut out around the artwork)</label>
-      <div id="cutBox" hidden><label><span>Cut follows</span><select id="cutFrom"><option value="lines">Around the lines</option><option value="edge">The picture's outside edge</option></select></label>
-        <label><span>Gap (mm)</span><input type="number" id="cutOff" inputmode="decimal" min="0.5" max="50" step="any" value="3"></label>
-        <div class="hint" id="cutInfo"></div></div>
+      <div class="hint">Width is the whole finished piece, cut line included. Height follows.</div>
+      <label class="chk big"><input type="checkbox" id="cutOn" checked>Cut out along the grey line</label>
+      <div class="hint" id="cutInfo"></div>
+      <details class="adv"><summary>Make a new cut line</summary>
+        <div class="row"><label class="grow"><span>Gap round the lines</span><input type="number" id="cutOff" inputmode="decimal" min="0" max="50" step="any" value="3"><span>mm</span></label><button id="makeCutBtn">Make cut line</button></div>
+        <div class="hint">Replaces the grey line with one that goes round all the lines at this gap.</div>
+      </details>
     </div></details>
     <details name="acc" id="sec-laser"><summary>5 · Laser steps</summary><div class="body">
       <div class="hint">Tap a step to open it. Power is % of your laser max S, speed in mm/min. Written into each .nc file.</div>
@@ -131,7 +143,7 @@
 </main>
 <div id="help" hidden><div class="hcard2"><div id="helpStep"></div><div class="row"><button id="helpSkip">Close</button><div class="grow"></div><button id="helpBack">‹ Back</button><button id="helpNext" class="accent">Next ›</button></div></div></div>
 <div id="toast" hidden></div>
-<script src="js/geom.js"></script>
+<script src="js/bez.js"></script>
 <script src="js/trace.js"></script>
 <script src="js/svgin.js"></script>
 <script src="js/laser.js"></script>
