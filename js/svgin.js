@@ -74,11 +74,13 @@ const SVGIN = (() => {
         // white background boxes and white filled areas from auto-tracers are not lines - skip them
         if ((!stroked || stl > 0.93) && (fl === 'none' ? !stroked : fl > 0.93)) { info.skippedWhite++; continue; }
         const M = rootInv.multiply(el.getScreenCTM() || el.getCTM()), tf = q => q && [M.a * q[0] + M.c * q[1] + M.e, M.b * q[0] + M.d * q[1] + M.f];
-        for (const p of shapeBez(el)) { for (const nd of p.n) { const q = tf([nd.x, nd.y]); nd.x = q[0]; nd.y = q[1]; nd.i = tf(nd.i); nd.o = tf(nd.o); } all.push(p); } info.shapes++; }
+        const wpCut = !!el.closest('[data-wp="cut"]'), wpw = el.closest('[data-wpw]'), wv = wpw ? +wpw.getAttribute('data-wpw') : 0; // tags written by Wayland Forge's Send to Waylands Path
+        for (const p of shapeBez(el)) { for (const nd of p.n) { const q = tf([nd.x, nd.y]); nd.x = q[0]; nd.y = q[1]; nd.i = tf(nd.i); nd.o = tf(nd.o); } if (wpCut) p.cut = true; if (wv > 0) p.w = wv; all.push(p); } info.shapes++; }
       const bb = BZ.bbox(all); if (!bb) throw new Error('No lines found in that SVG (text and linked symbols are not imported).');
       const k = 1000 / Math.max(bb.w, bb.h, 1e-6), sc = q => q && [(q[0] - bb.x0) * k, (q[1] - bb.y0) * k];
       for (const p of all) for (const nd of p.n) { const q = sc([nd.x, nd.y]); nd.x = q[0]; nd.y = q[1]; nd.i = sc(nd.i); nd.o = sc(nd.o); }
-      return { paths: all, w: bb.w * k, h: bb.h * k, info }; }
+      const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number), wa = root.getAttribute('width') || '', mmpu = /mm\s*$/.test(wa) && vb.length === 4 && vb[2] > 0 ? parseFloat(wa) / vb[2] : 0; // real size, when the file says it is in mm
+      return { paths: all, w: bb.w * k, h: bb.h * k, info, mmW: mmpu ? bb.w * mmpu : 0, mmH: mmpu ? bb.h * mmpu : 0 }; }
     finally { host.remove(); } }
   return { importSVG, pathToBez, shapeBez };
 })();

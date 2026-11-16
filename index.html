@@ -18,6 +18,7 @@
     <h1 class="htitle">Waylands Path</h1>
     <div class="hsub">Line drawing or SVG → clean laser lines</div>
     <div class="hbtns">
+      <div id="ffWait" class="ffwait" hidden>✏️ A design from Wayland Forge is waiting: <b id="ffWaitName"></b><div class="ffrow"><button id="ffOpen" class="accent">Open it</button><button id="ffDrop">Not now</button></div></div>
       <label class="hb primary filebtn">🖼️ Open line drawing or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
       <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
       <button id="homeHelp" class="hb">? How it works</button>
@@ -224,6 +225,7 @@
 </main>
 <div id="help" hidden><div class="hcard2"><div id="helpStep"></div><div class="row"><button id="helpSkip">Close</button><div class="grow"></div><button id="helpBack">‹ Back</button><button id="helpNext" class="accent">Next ›</button></div></div></div>
 <div id="toast" hidden></div>
+<dialog id="ffDlg" class="lzdlg"><h3>✏️ From Wayland Forge</h3><div id="ffNote" class="ffnote"></div><div class="lzbbtn"><button id="ffOk" class="accent">OK</button></div></dialog>
 <dialog id="lzDlg" class="lzdlg"><h3>Burn settings</h3>
   <div class="hint" id="lzWhat"></div>
   <div id="lzBurn" class="lzburn"><div class="hint">Tap a step to open it. Each step has its own settings. Power is % of your laser max S, speed in mm/min.</div><div id="lzSteps"></div></div>

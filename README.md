@@ -39,6 +39,10 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v4.6 – Designs from Wayland Forge
+
+Wayland Forge's **✏️ Send to Waylands Path** button opens its design here as a new project: the true mm size is kept, letters arrive as outlines, Forge's cut lines stay cuts (shaded grey), ring lines keep their width, and laser 0,0 is the bottom-left corner of the design. If Waylands Path was opened another way, the home screen shows "A design from Wayland Forge is waiting" with Open it / Not now. Laser output for existing designs is byte-for-byte the same as v4.5.
+
 ## v4.5 – Export opens Burn settings (like Wayland Forge)
 
 Export now opens the Burn settings sheet before saving. The laser files are byte-for-byte the same as v4.4 for the same settings (checked on defaults, custom power/speed/passes with a 2-copy blank, and Line To Line etch). Defaults are unchanged: etch Vector 25% at 3000 mm/min, cut Vector 100% at 1000 mm/min, 3 passes, holes first.

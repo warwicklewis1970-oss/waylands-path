@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4.5';
+const APP_VERSION = 'v4.6';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -531,7 +531,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Export opens Burn settings (power, speed, passes) like Wayland Forge'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: designs sent from Wayland Forge open here (✏️ Send to Waylands Path)'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -557,5 +557,25 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
 if (sessionStorage.getItem('wp-resume') === '1') { sessionStorage.removeItem('wp-resume'); setTimeout(() => resume().then(ok => { if (ok) toast(`Updated to ${APP_VERSION} - your project is just as you left it`, 3500); }).catch(() => {}), 50); }
 window.addEventListener('resize', () => resize()); new ResizeObserver(() => resize()).observe($('stageWrap'));
 window.addEventListener('pagehide', () => { saveNow(); }); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow().then(() => { if (window.PJ) PJ.background(); }); });
+// ---------- v4.6: a design sent from Wayland Forge (✏️ Send to Waylands Path). Forge leaves an SVG in true mm in storage both apps share
+// (same website); it opens here as a new project with letters as outlines and Forge's cut lines as cuts. Laser export code is unchanged.
+const FF = { db() { return new Promise((ok, no) => { const r = indexedDB.open('wayland-share', 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('x')) r.result.createObjectStore('x'); }; r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); },
+  async op(mode, fn) { const db = await FF.db(); try { return await new Promise((ok, no) => { const t = db.transaction('x', mode), q = fn(t.objectStore('x')); t.oncomplete = () => ok(q && q.result); t.onerror = () => no(t.error); }); } finally { db.close(); } },
+  get() { return FF.op('readonly', st => st.get('toPath')).catch(() => null); }, clear() { return FF.op('readwrite', st => st.delete('toPath')).catch(() => null); } };
+async function openFromForge(rec) { if (!rec || !rec.svg) return false; await saveNow();
+  let r; try { r = SVGIN.importSVG(rec.svg); } catch (e) { toast('Could not open the design from Forge: ' + e.message, 5000); return false; }
+  startProject(String(rec.name || 'Forge design').slice(0, 40)); S.src = { kind: 'svg', w: r.w, h: r.h }; $('sec-trace').hidden = true; srcImg = null; srcEl = null; S.paths = r.paths;
+  if (r.mmW > 0) S.widthMm = Math.round(r.mmW * 100) / 100; const nc = r.paths.filter(p => p.cut).length; S.cutOn = nc > 0; await FF.clear();
+  $('srcInfo').innerHTML = `From Wayland Forge: ${r.paths.length - nc} etch lines${nc ? ` and ${nc} cut line${nc > 1 ? 's' : ''}` : ''}, ${f1(S.widthMm)} mm wide, curves kept.${rec.photos ? ` <span class="warn">${rec.photos} photo${rec.photos > 1 ? 's' : ''} stayed in Forge.</span>` : ''}`;
+  syncInputs(); enterApp(); closeMenu(); changed(); fit(); await saveNow();
+  $('ffNote').innerHTML = `<b>${esc(S.name)}</b> came from Wayland Forge as a new project, ${f1(S.widthMm)} × ${f1(r.mmH)} mm.<br><br>Letters arrive as <b>outlines</b> - a line round each letter - not single lines. Edit them with the tools as usual.${nc ? '<br><br>Forge\'s cut lines are shaded grey and stay cuts.' : ''}${rec.photos ? `<br><br>${rec.photos} photo${rec.photos > 1 ? 's' : ''} stayed in Forge - Waylands Path works with lines.` : ''}<br><br>Laser 0,0 is the bottom-left corner of the design. Your Forge design is unchanged.`;
+  const d = $('ffDlg'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); return true; }
+$('ffOk').onclick = () => $('ffDlg').close();
+async function checkForge() { const rec = await FF.get(); const bar = $('ffWait'); if (!rec || !rec.svg) { if (bar) bar.hidden = true; return; }
+  if (/[?&]from=forge\b/.test(location.search)) { history.replaceState(null, '', location.pathname); await openFromForge(rec); return; }
+  if (bar) { bar.hidden = false; $('ffWaitName').textContent = rec.name || 'a design'; } }
+$('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromForge(await FF.get()); };
+$('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
+setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
 window.WP = { get paintN() { return paintN; }, holeCount, innerCuts, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
