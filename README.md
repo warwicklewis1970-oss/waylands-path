@@ -32,3 +32,9 @@ Your last project is kept on the device (IndexedDB).
 - **Tracing helper:** if js/worker.js can't load, errors, or stays silent, tracing runs on the main screen with a message - never "Tracing…" forever.
 - **Laser steps:** defaults live in one place (laser.js `DEF`), changes are kept per device, **Reset to defaults** button.
 - **Sheet:** blank width × height (200 × 200 mm), margin (5 mm), Centre or Bottom-left at margin, copies across × down with a gap, Fit as many as possible, preview. With Sheet on, laser 0,0 = the blank's bottom-left corner in every file.
+
+## v4.3
+- **Cut out**: add as many cut outs as you like, one after another. Every cut-away part is **shaded grey** (holes and everything outside the grey outer edge), so you can see what the laser will remove. A tap inside an area picks the area even near a grey line (only a tap right on a grey line picks the line). Tap a grey cut out to pick it → **Make etch line** turns it back. Each cut out is its own Undo step.
+- Cut outs are kept when the picture is traced again (they were lost before), and saved when the app goes to the background.
+- If a trace finds no outside edge, a grey outer cut line is made automatically.
+- **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
