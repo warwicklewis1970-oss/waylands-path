@@ -38,3 +38,12 @@ Your last project is kept on the device (IndexedDB).
 - Cut outs are kept when the picture is traced again (they were lost before), and saved when the app goes to the background.
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
+
+## v4.4 – My projects + Google Drive sync
+- **My projects** on the home screen: every design is saved on the device as you work, by name, with date and size. Tap to open, ✎ to rename, 🗑 to delete. The project from v4.3 is added to the list automatically.
+- **Sign in with Google to sync**: projects go into the app's hidden Google Drive app-data folder (files `wpp-<id>.json`; Wayland Forge uses `wfp-` files in the same hidden folder, so the two apps never mix). Same Google sign-in client as Wayland Forge.
+- Syncs a few seconds after each save, straight away when the app goes to the background, and when the app is opened or comes back. Newest save wins; if the same project was changed on both devices before syncing, the older one is kept as a copy "(other device …)". Deletes and renames reach the other device.
+- Status: "☁ Synced 2 min ago" on the home screen and in the Menu. Google sign-in lasts about an hour; after that the app never pops up by itself – tap **Sync now**.
+- Size: each project shows its size. Over 4 MB uploads in one go with the large-file upload; over 20 MB the lines and settings sync but the picture stays on that device.
+- Fix: the service worker no longer deletes Wayland Forge's offline cache (same website).
+

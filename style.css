@@ -152,3 +152,15 @@ body.menuOpen #panel{transform:none}
 
 /* v4.3 live pen ink layer (drawn straight away, no full redraw) */
 #ink{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;touch-action:none}
+
+/* v4.4 My projects + Google Drive sync */
+body.home #home{place-items:start center;overflow-y:auto}
+.hcard{padding:24px 0 30px}
+#projBox{margin-top:18px;text-align:left}
+.ptitle{font-size:18px;font-weight:700;color:var(--acc);margin:4px 2px 8px}
+.syncbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.syncst{font-size:15px}.syncst.ok{color:#7fe0a7}.syncst.auth,.syncst.err,.syncst.denied{color:var(--cop)}.syncwho{font-size:12px;color:var(--dim)}.syncnote{font-size:12px;color:var(--cop);margin-top:4px}
+.syncbtns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.syncbtns button{min-height:44px;flex:1}
+.gbtn{background:#fff;color:#1f1f1f;font-weight:600;border:0}.gG{font-weight:800;color:#4285f4;margin-right:4px}
+.prow{display:flex;gap:6px;margin-bottom:8px}.popen{flex:1;text-align:left;min-height:56px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px}
+.popen b{font-size:16px}.popen small{font-size:12px;color:var(--dim)}.pico{width:48px;min-height:56px;font-size:18px}.pnone{color:var(--dim);font-size:14px;padding:6px 2px}

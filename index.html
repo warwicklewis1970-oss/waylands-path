@@ -22,6 +22,12 @@
       <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
       <button id="homeHelp" class="hb">? How it works</button>
     </div>
+    <div id="projBox">
+      <div class="ptitle">📁 My projects <span id="projCount"></span></div>
+      <div id="syncBox" class="syncbox"><div id="syncStatus" class="syncst"></div><div id="syncWho" class="syncwho"></div><div id="syncNote" class="syncnote" hidden></div>
+        <div class="syncbtns"><button id="syncConnect" class="gbtn"><span class="gG">G</span> Sign in with Google to sync</button><button id="syncNow" hidden>⟳ Sync now</button><button id="syncOut" hidden>Sign out</button></div></div>
+      <div id="projList"></div>
+    </div>
     <div class="hver" id="homeVer"></div>
   </div>
 </div>
@@ -214,7 +220,7 @@
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
       <div class="hint">Your work saves on this device by itself. Open the app again and tap Resume.</div>
       <div class="row"><button id="newBtn" class="grow">✚ New project (open another picture)</button></div>
-      <div class="hint" id="saveInfo"></div>
+      <div class="hint" id="saveInfo"></div><div class="hint" id="syncEd"></div>
       <div class="hint small">Waylands Path <span id="verOut"></span> · works offline · sister app to Wayland Forge</div>
     </div></details>
   </aside>
@@ -228,5 +234,6 @@
 <script src="js/app.js"></script>
 <script src="js/tools2.js"></script>
 <script src="js/tools4.js"></script>
+<script src="js/sync.js"></script>
 </body>
 </html>
