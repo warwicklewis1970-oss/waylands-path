@@ -1,6 +1,6 @@
 // Waylands Path v3 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v3';
+const APP_VERSION = 'v3.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -109,19 +109,19 @@ async function retrace(record = true) { if (!srcImg) return; const seq = ++trace
   if (r.error) { toast('Tracing failed: ' + r.error, 4000); return; } if (record) pushUndo(); lw = r.lw || 0;
   S.paths = r.paths; clearSel(); pen = null;
   const nc = r.paths.filter(p => p.cut).length;
-  $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide${r.darkBg ? ', light shapes on a dark background' : ''}. ${nc ? 'Grey cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
+  $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide${r.darkBg ? ', light shapes on a dark background' : ''}. ${nc ? 'Grey cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.solids ? ` ${r.solids} solid dark shape${r.solids > 1 ? 's' : ''} (windows, hinges…) traced round the edge.` : ''}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
   changed(); }
 function traceSoon() { clearTimeout(traceT); traceT = setTimeout(() => retrace(true), 160); }
 // ---------- opening files ----------
 async function openFile(file) { if (!file) return; const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name), name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled';
-  try { if (isSvg) { const r = SVGIN.importSVG(await file.text()); startProject(name); S.src = { kind: 'svg', w: r.w, h: r.h }; srcImg = null; srcEl = null; S.paths = r.paths; S.cutOn = false;
+  try { if (isSvg) { const r = SVGIN.importSVG(await file.text()); startProject(name); S.src = { kind: 'svg', w: r.w, h: r.h }; $('sec-trace').hidden = true; srcImg = null; srcEl = null; S.paths = r.paths; S.cutOn = false;
       const sk = []; if (r.info.skippedWhite) sk.push(`${r.info.skippedWhite} white background shape${r.info.skippedWhite > 1 ? 's' : ''}`); if (r.info.skippedText) sk.push(`${r.info.skippedText} text item(s) (convert text to paths first)`); if (r.info.skippedUse) sk.push(`${r.info.skippedUse} linked symbol(s)`);
       $('srcInfo').innerHTML = `SVG: ${r.paths.length} lines from ${r.info.shapes} shapes, curves kept.${sk.length ? `<br><span class="warn">Skipped ${sk.join(', ')}.</span>` : ''}`;
       syncInputs(); enterApp(); openSec('sec-size'); changed(); fit(); toast(`Opened ${r.paths.length} lines from the SVG`); return; }
     const el = await loadImage(file), sc = Math.min(1, 1600 / Math.max(el.width, el.height)), w = Math.max(1, Math.round(el.width * sc)), h = Math.max(1, Math.round(el.height * sc));
     const alphaOk = /png|gif|webp/i.test(file.type), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); if (!alphaOk) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } g.drawImage(el, 0, 0, w, h);
     const url = c.toDataURL(alphaOk ? 'image/png' : 'image/jpeg', 0.92);
-    startProject(name); S.src = { kind: 'image', w, h, url }; await setSource(url); $('srcInfo').textContent = `${file.name} · ${w} × ${h} px.`;
+    startProject(name); S.src = { kind: 'image', w, h, url }; $('sec-trace').hidden = false; await setSource(url); $('srcInfo').textContent = `${file.name} · ${w} × ${h} px.`;
     enterApp(); openSec('sec-trace'); fit(); await retrace(false); fit(); }
   catch (e) { console.error(e); toast(e.message || 'Could not open that file.', 4000); } }
 function loadImage(file) { return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('That picture could not be opened. Try a JPG or PNG.')); im.src = u; }); }

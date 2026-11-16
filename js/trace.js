@@ -5,7 +5,7 @@
 // corners, ends, junctions and where a curve needs one. Straight runs are exact lines; near level/upright lines are snapped.
 'use strict';
 const T = (() => {
-  const VERSION = 3;
+  const VERSION = 3.1;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   function grey(rgba, w, h) { const g = new Float32Array(w * h);
     for (let i = 0, p = 0; i < g.length; i++, p += 4) { const a = rgba[p + 3] / 255; // transparent = white (never burns)
@@ -187,12 +187,12 @@ const T = (() => {
     return best; }
   function endDir(p, arm) { const a = p[0]; let j = 1; while (j < p.length - 1 && D(p[j], a) < arm) j++; const b = p[j], l = D(a, b) || 1; return [(a[0] - b[0]) / l, (a[1] - b[1]) / l]; }
   // close gaps: a loose end that points at another line within maxD is extended to stop exactly on it
-  function closeGaps(g, maxD, arm) { let n = 0; for (let pass = 0; pass < 2; pass++) { const deg = degrees(g), ends = [];
+  function closeGaps(g, maxD, arm, needInk) { let n = 0; for (let pass = 0; pass < 2; pass++) { const deg = degrees(g), ends = [];
       g.edges.forEach(e => { if (deg[e.a] === 1) ends.push({ e, end: 0 }); if (deg[e.b] === 1 && e.a !== e.b) ends.push({ e, end: 1 }); });
       for (const en of ends) { const e = en.e; if (e.dead) continue; const p = en.end ? e.pts.slice().reverse() : e.pts, nid = en.end ? e.b : e.a; if (degrees(g)[nid] !== 1) continue;
         const dir = endDir(p, arm), from = p[0], L = plen(e.pts);
         const hit = rayHit(g, from, dir, maxD, (f, j) => f === e && (L < arm * 4 || (en.end ? plen(f.pts.slice(j)) < arm * 3 : plen(f.pts.slice(0, j + 2)) < arm * 3)));
-        if (!hit) continue; let tgt; const f = hit.e, A = f.pts[0], B = f.pts[f.pts.length - 1];
+        if (!hit) continue; if (needInk && !needInk(from, hit.pt)) continue; let tgt; const f = hit.e, A = f.pts[0], B = f.pts[f.pts.length - 1];
         if (D(hit.pt, A) < arm * 0.7) tgt = f.a; else if (D(hit.pt, B) < arm * 0.7) tgt = f.b; else tgt = splitEdge(g, f, hit.j, hit.pt);
         const T_ = g.nodes[tgt]; if (en.end) e.pts.push([T_.x, T_.y]), e.b = tgt; else e.pts.unshift([T_.x, T_.y]), e.a = tgt; n++; } }
     return n; }
@@ -242,13 +242,53 @@ const T = (() => {
         if (!best) continue; const { q, r } = best, s = BZ.seg(q, r.k); let tgt;
         if (Math.hypot(s.a.x - r.pt[0], s.a.y - r.pt[1]) < tolU * 0.6) tgt = s.a; else if (Math.hypot(s.b.x - r.pt[0], s.b.y - r.pt[1]) < tolU * 0.6) tgt = s.b; else { const jj = BZ.insertNode(q, r.k, r.t); tgt = q.n[jj]; tgt.s = 0; }
         BZ.moveNode(nd, tgt.x - nd.x, tgt.y - nd.y); n++; } } return n; }
+  function upscale(d, w, h, W, H) { const o = new Uint8ClampedArray(W * H * 4), fx = w / W, fy = h / H;
+    for (let y = 0; y < H; y++) { const sy = Math.max(0, Math.min(h - 1.001, (y + 0.5) * fy - 0.5)), y0 = sy | 0, ty = sy - y0;
+      for (let x = 0; x < W; x++) { const sx = Math.max(0, Math.min(w - 1.001, (x + 0.5) * fx - 0.5)), x0 = sx | 0, tx = sx - x0, a = (y0 * w + x0) * 4, b = a + 4, c = a + w * 4, e = c + 4, t = (y * W + x) * 4;
+        for (let k = 0; k < 4; k++) o[t + k] = (d[a + k] * (1 - tx) + d[b + k] * tx) * (1 - ty) + (d[c + k] * (1 - tx) + d[e + k] * tx) * ty; } }
+    return o; }
+  // square max / min filters (separable, radius r)
+  function runF(src, w, h, r, isMax) { const t = new Float32Array(w * h), o = new Float32Array(w * h), cmp = isMax ? (a, b) => a > b : (a, b) => a < b;
+    const pass = (inp, out, n, len, idx) => { const q = new Int32Array(len), val = new Float32Array(len);
+      for (let a = 0; a < n; a++) { let hd = 0, tl = 0; for (let b = 0; b < len + r; b++) { if (b < len) { const v = inp[idx(a, b)]; while (tl > hd && !cmp(val[tl - 1], v)) tl--; q[tl] = b; val[tl] = v; tl++; }
+          const c = b - r; if (c < 0) continue; while (q[hd] < c - r) hd++; out[idx(a, c)] = val[hd]; } } };
+    pass(src, t, h, w, (y, x) => y * w + x); pass(t, o, w, h, (x, y) => y * w + x); return o; }
+  const maxF = (g, w, h, r) => runF(g, w, h, r, true), minF = (g, w, h, r) => runF(g, w, h, r, false);
+  // a straight line that bends in its last few pixels where it meets another line: carry the straight on to that line instead
+  function unhook(paths, lwU) { const same = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6; let n = 0;
+    for (const p of paths) { if (p.z || p.cut || p.n.length < 3) continue;
+      for (const head of [true, false]) { const m = p.n.length, n0 = head ? p.n[0] : p.n[m - 1], n1 = head ? p.n[1] : p.n[m - 2], n2 = head ? p.n[2] : p.n[m - 3];
+        const ln = Math.hypot(n1.x - n2.x, n1.y - n2.y), lh = Math.hypot(n0.x - n1.x, n0.y - n1.y);
+        const straight12 = head ? !n1.o && !n2.i : !n2.o && !n1.i; if (!straight12 || lh > lwU * 2.2 || ln < lh * 2 || ln < lwU * 2) continue;
+        const dir = [(n1.x - n2.x) / ln, (n1.y - n2.y) / ln], hd = [(n0.x - n1.x) / lh, (n0.y - n1.y) / lh], ang = Math.acos(clamp(dir[0] * hd[0] + dir[1] * hd[1], -1, 1)) * 180 / Math.PI;
+        if (ang < 1.5 || ang > 35) continue;
+        const sharers = []; for (const q of paths) { if (q === p) continue; const j = q.n.findIndex(m2 => same(m2, n0)); if (j >= 0) sharers.push({ q, j }); }
+        if (sharers.length > 1) continue; let tgt = null;
+        if (sharers.length === 1) { const q = sharers[0].q, a = [n1.x, n1.y], b = [n1.x + dir[0] * (lh * 3 + lwU), n1.y + dir[1] * (lh * 3 + lwU)];
+          let best = null; for (const c of BZ.crossings(q, a, b)) if (!best || c.u < best.u) best = c; if (!best) continue;
+          const jj = BZ.insertNode(q, best.k, best.t); const nd = q.n[jj]; nd.x = best.pt[0]; nd.y = best.pt[1]; nd.s = 0; nd.keep = true; tgt = nd;
+          const old = q.n.findIndex(m2 => same(m2, n0)); if (old > 0 && old < q.n.length - 1 && !q.n[old].i && !q.n[old].o) { const pa = q.n[old - 1], pb = q.n[old + 1]; if (!pa.o && !pb.i) q.n.splice(old, 1); } }
+        else tgt = { x: n1.x + dir[0] * lh * Math.cos(ang * Math.PI / 180), y: n1.y + dir[1] * lh * Math.cos(ang * Math.PI / 180) };
+        n0.x = tgt.x; n0.y = tgt.y; n0.i = n0.o = null; if (head) n1.i = null; else n1.o = null; n++; } }
+    return n; }
   // ---------- the tracer ----------
   function lineArt(img, opts = {}) { const t0 = Date.now(), detail = clamp(+opts.detail || 5, 1, 10), cornerS = clamp(+opts.corners || 5, 1, 10);
-    const P = prep(img, 1600), { d, w, h } = P, back = 1 / P.sc, N = w * h;
+    const P = prep(img, 1600); let { d, w, h } = P, up = 1;
+    // small pictures: enlarge smoothly first so thin lines are several pixels wide
+    const big = Math.max(w, h); if (big < 1000) { up = Math.min(3, 1300 / big); const W2 = Math.round(w * up), H2 = Math.round(h * up); d = upscale(d, w, h, W2, H2); up = W2 / w; w = W2; h = H2; }
+    const back = 1 / (P.sc * up), N = w * h;
     const g = blur(autoContrast(grey(d, w, h)), w, h, 0.6), th = otsu(g); let dark = new Uint8Array(N);
-    for (let i = 0; i < N; i++) dark[i] = g[i] < th ? 1 : 0; if (opts.invert) dark = inv(dark);
+    for (let i = 0; i < N; i++) dark[i] = g[i] < th ? 1 : 0;
+    // faint thin lines: darker than their close surroundings even if not darker than the global threshold
+    let inkAt = null; { let s0 = 0, n0 = 0, s1 = 0, n1 = 0; for (let i = 0; i < N; i++) { if (g[i] < th) { s0 += g[i]; n0++; } else { s1 += g[i]; n1++; } } const lo = n0 ? s0 / n0 : 0, hi = n1 ? s1 / n1 : 1;
+      if (!opts.invert && hi - lo > 0.16) { const R = Math.round(clamp(lineWidth(dark, w, h) * 1.1, 2, 25)), cl = minF(maxF(g, w, h, R), w, h, R), lim = (hi - lo) * 0.3, mid = lo + (hi - lo) * 0.75;
+        for (let i = 0; i < N; i++) if (!dark[i] && cl[i] - g[i] > lim && g[i] < mid) dark[i] = 1;
+        // how much a pixel (or its neighbours) looks like a faint line: used to decide whether a gap in a line is real
+        inkAt = (x, y) => { let b = 0; const xi = Math.round(x), yi = Math.round(y); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = xi + dx, yy = yi + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const i = yy * w + xx; b = Math.max(b, (cl[i] - g[i]) / (hi - lo), g[i] < th ? 1 : 0); } return b; }; } }
+    const inkAlong = (a, b) => { if (!inkAt) return 0; const n = Math.max(2, Math.ceil(D(a, b))); let ok = 0; for (let k = 0; k <= n; k++) if (inkAt(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) > 0.18) ok++; return ok / (n + 1); };
+    if (opts.invert) dark = inv(dark);
     let bd = 0, bn = 0; for (let x = 0; x < w; x++) { bd += dark[x] + dark[(h - 1) * w + x]; bn += 2; } for (let y = 0; y < h; y++) { bd += dark[y * w] + dark[y * w + w - 1]; bn += 2; }
-    const darkBg = bd / bn > 0.5, lw = lineWidth(dark, w, h), minArea = Math.max(40, N * 0.0015);
+    const darkBg = bd / bn > 0.5, minArea0 = 0; let lw = lineWidth(dark, w, h); const minArea = Math.max(40, N * 0.0015);
     // design area: everything inside the outer edge of the artwork
     let region;
     if (darkBg) { const light = inv(dark); removeSpecks(light, w, h, Math.max(8, lw * lw)); region = fillHoles(close(light, w, h, lw * 0.6 + 1), w, h); }
@@ -258,16 +298,29 @@ const T = (() => {
       region = fillHoles(inv(bg), w, h); }
     let parts = keepBig(region, w, h, minArea);
     for (const k of [1.5, 2.5, 4]) { if (parts <= 1) break; const c = fillHoles(close(region, w, h, lw * k), w, h); const n = comps(c, w, h, minArea).big; if (n < parts) { region = c; parts = keepBig(region, w, h, minArea); } }
-    // the grey edge / cut line: through the middle of the outside line
-    const cutMask = darkBg ? dil(region, w, h, lw / 2) : ero(region, w, h, lw / 2), cf = new Float32Array(N); for (let i = 0; i < N; i++) cf[i] = cutMask[i] ? 0 : 1;
-    const loops = contoursIso(blur(cf, w, h, Math.max(0.8, lw * 0.15)), w, h, 0.5).filter(l => Math.abs(area(l)) > minArea).sort((a, b) => Math.abs(area(b)) - Math.abs(area(a)));
     // ink inside the design -> centre lines
     const L = new Uint8Array(N); for (let i = 0; i < N; i++) L[i] = dark[i] && region[i] ? 1 : 0;
     removeSpecks(L, w, h, Math.max(6, lw * lw * (0.3 + detail * 0.08))); fillSmallHoles(L, w, h, Math.max(4, lw * lw * 0.5));
-    const lf = new Float32Array(N); for (let i = 0; i < N; i++) lf[i] = L[i]; const lb = blur(lf, w, h, Math.max(0.7, lw * 0.18)); for (let i = 0; i < N; i++) L[i] = lb[i] > 0.5 ? 1 : 0;
-    thin(L, w, h); tidySkeleton(L, w, h);
+    const lf = new Float32Array(N); for (let i = 0; i < N; i++) lf[i] = L[i]; const lb = blur(lf, w, h, Math.max(0.7, lw * 0.18)); for (let i = 0; i < N; i++) L[i] = lb[i] > 0.5 || (L[i] && lb[i] > 0.22) ? 1 : 0;
+    const dbg = opts.debug ? { w, h, dark: dark.slice(), region: region.slice(), ink: L.slice() } : null;
+    const L0 = L.slice(); thin(L, w, h); tidySkeleton(L, w, h);
+    // typical width of the main lines (the thin-line width above can come from fine detail lines)
+    const dIn = edt(inv(L0), w, h); { const ws = []; for (let i = 0; i < N; i++) if (L[i]) ws.push(2 * Math.sqrt(dIn[i])); ws.sort((a, b) => a - b); if (ws.length > 50) lw = clamp(Math.max(lw, ws[Math.floor(ws.length * 0.5)]), 1.5, 80); }
+    // solid dark shapes (much wider than a line: filled windows, hinges...) are traced round their edge, not down the middle
+    let fatLoops = []; { const core = new Uint8Array(N), rr = lw * lw; let nc = 0; for (let i = 0; i < N; i++) if (L0[i] && dIn[i] > rr) { core[i] = 1; nc++; }
+      if (nc) { keepBig(core, w, h, Math.max(4, lw * lw * 0.15)); const fat = dil(core, w, h, lw * 1.05); for (let i = 0; i < N; i++) fat[i] = fat[i] && L0[i] ? 1 : 0; keepBig(fat, w, h, lw * lw * 3);
+        let nf = 0; for (let i = 0; i < N; i++) nf += fat[i];
+        if (nf) { const ff = new Float32Array(N); for (let i = 0; i < N; i++) ff[i] = fat[i] ? 0 : 1;
+          fatLoops = contoursIso(blur(ff, w, h, Math.max(0.8, lw * 0.08)), w, h, 0.5).filter(l => Math.abs(area(l)) > lw * lw * 1.5);
+          const fd = dil(fat, w, h, 1.5), T2 = new Uint8Array(N); for (let i = 0; i < N; i++) T2[i] = L0[i] && !fd[i] ? 1 : 0; removeSpecks(T2, w, h, lw * lw * 0.6); if (dbg) dbg.t2 = T2.slice();
+          thin(T2, w, h); tidySkeleton(T2, w, h); L.set(T2); if (dbg) dbg.fat = fat; } } }
+    if (dbg) dbg.skel = L.slice();
+    // the grey edge / cut line: through the middle of the outside line
+    const cutMask = darkBg ? dil(region, w, h, lw / 2) : ero(region, w, h, lw / 2), cf = new Float32Array(N); for (let i = 0; i < N; i++) cf[i] = cutMask[i] ? 0 : 1;
+    const loops = contoursIso(blur(cf, w, h, Math.max(0.8, lw * 0.15)), w, h, 0.5).filter(l => Math.abs(area(l)) > minArea).sort((a, b) => Math.abs(area(b)) - Math.abs(area(a)));
     const gr = skelGraph(L, w, h), arm = Math.max(3, lw * 0.9), spur = lw * (1.2 + (10 - detail) * 0.12), speck = lw * (1.5 + (10 - detail) * 0.3);
-    mergeDeg2(gr); prune(gr, spur, speck); collapseClose(gr, lw * 0.9); mergeDeg2(gr); straightenJunctions(gr, lw * 0.75);
+    const stage = n => { if (dbg) (dbg.st = dbg.st || []).push([n, gr.edges.map(e => e.pts.map(q => [+q[0].toFixed(1), +q[1].toFixed(1)]))]); }; stage('graph');
+    mergeDeg2(gr); prune(gr, spur, speck); stage('prune'); collapseClose(gr, lw * 0.9); mergeDeg2(gr); straightenJunctions(gr, lw * 0.75); stage('collapse');
     // lines lying along the cut are the cut: drop them, then loose ends near the cut reach it exactly
     const cutPts = []; for (const l of loops) for (let i = 1; i < l.length; i++) { const a = l[i - 1], b = l[i], n = Math.ceil(D(a, b)); for (let k = 0; k < n; k++) cutPts.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); }
     const dc = cutPts.length ? edtPts(cutPts, w, h) : null, dcut = q => { if (!dc) return 1e9; const x = clamp(Math.floor(q[0]), 0, w - 1), y = clamp(Math.floor(q[1]), 0, h - 1); return Math.sqrt(dc[y * w + x]); };
@@ -275,22 +328,33 @@ const T = (() => {
       for (const e of gr.edges) { let run = []; const pieces = []; for (const q of e.pts) { if (dcut(q) >= near) run.push(q); else { if (run.length) pieces.push(run); run = []; } } if (run.length) pieces.push(run);
         if (pieces.length === 1 && pieces[0].length === e.pts.length) { keep.push(e); continue; }
         for (const pc of pieces) { if (plen(pc) < lw) continue; const a = pc[0] === e.pts[0] ? e.a : gr.nodes.push({ x: pc[0][0], y: pc[0][1] }) - 1, lst = pc[pc.length - 1], b = lst === e.pts[e.pts.length - 1] ? e.b : gr.nodes.push({ x: lst[0], y: lst[1] }) - 1; keep.push({ a, b, pts: pc }); } }
-      gr.edges = keep; mergeDeg2(gr); prune(gr, spur, speck); }
-    const gaps = closeGaps(gr, lw * (1.5 + detail * 0.15), arm); mergeDeg2(gr);
+      gr.edges = keep; stage('nearcut'); mergeDeg2(gr); prune(gr, spur, speck); stage('prune2'); }
+    let gaps = closeGaps(gr, lw * (1.5 + detail * 0.15), arm); mergeDeg2(gr);
+    if (inkAt) { gaps += closeGaps(gr, lw * 5, arm, (a, b) => { const v = inkAlong(a, b); if (dbg) (dbg.ev = dbg.ev || []).push([a.map(Math.round), b.map(Math.round), +v.toFixed(2)]); return v > 0.8; }); mergeDeg2(gr); }
     if (dc) { const deg = degrees(gr); for (const e of gr.edges) for (const end of [0, 1]) { const n = end ? e.b : e.a; if (deg[n] !== 1) continue; const q = end ? e.pts[e.pts.length - 1] : e.pts[0];
         if (dcut(q) > lw * 2.2) continue; const p = end ? e.pts.slice().reverse() : e.pts, dir = endDir(p, arm); let best = null;
         for (const c of cutPts) { const v = [c[0] - q[0], c[1] - q[1]], dd = Math.hypot(v[0], v[1]); if (dd > lw * 2.6) continue; const along = (v[0] * dir[0] + v[1] * dir[1]) / (dd || 1); const score = dd * (1.6 - along); if (along > 0.3 && (!best || score < best.s)) best = { s: score, c }; }
         if (best) { const c = best.c.slice(); if (end) e.pts.push(c); else e.pts.unshift(c); setNode(gr, n, c[0], c[1]); gr.nodes[n].onCut = true; } } }
-    prune(gr, spur, speck); centreJunctions(gr, lw); straightenJunctions(gr, lw * 0.9);
+    if (fatLoops.length) { const fp = []; for (const l of fatLoops) for (let i = 1; i < l.length; i++) { const a = l[i - 1], b = l[i], n = Math.ceil(D(a, b)); for (let k = 0; k < n; k++) fp.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); }
+      const df = edtPts(fp, w, h), dfat = q => { const x = clamp(Math.floor(q[0]), 0, w - 1), y = clamp(Math.floor(q[1]), 0, h - 1); return Math.sqrt(df[y * w + x]); }, deg = degrees(gr);
+      for (const e of gr.edges) for (const end of [0, 1]) { const n = end ? e.b : e.a; if (deg[n] !== 1) continue; const q = end ? e.pts[e.pts.length - 1] : e.pts[0]; if (dfat(q) > lw * 5) continue;
+        const p = end ? e.pts.slice().reverse() : e.pts, dir = endDir(p, arm); let best = null;
+        for (const c of fp) { const v = [c[0] - q[0], c[1] - q[1]], dd = Math.hypot(v[0], v[1]); if (dd > lw * 5) continue; const along = (v[0] * dir[0] + v[1] * dir[1]) / (dd || 1); if (dd > lw * 1.9 && (along < 0.9 || inkAlong(q, c) < 0.8)) continue; const sc = dd * (1.6 - along); if (along > 0.2 && (!best || sc < best.s)) best = { s: sc, c }; }
+        if (!best && dfat(q) < 1.5) best = { c: q, same: 1 };
+        if (best) { const c = best.c.slice(); if (!best.same) { if (end) e.pts.push(c); else e.pts.unshift(c); } setNode(gr, n, c[0], c[1]); gr.nodes[n].onCut = true; } } }
+    stage('ext'); prune(gr, spur, speck); stage('prune3'); centreJunctions(gr, lw); straightenJunctions(gr, lw * 0.9); stage('final');
     const corner = 62 - cornerS * 5, tol = Math.max(0.7, lw * 0.22), opt = { tol, lineTol: Math.max(0.8, lw * 0.25), arm, corner, smooth: arm * 0.5, minStraight: Math.max(lw * 2.5, arm * 4) };
     const paths = [];
     for (const c of chains(gr, arm, 38)) { if (plen(c.pts) < lw * 0.8) continue; const p = BZ.fromPolyline(c.pts, Object.assign({}, opt, { closed: c.closed, forced: c.forced })); if (!p) continue;
       if (c.forced.length) { const fk = new Set(c.forced.map(q => q[0].toFixed(3) + ',' + q[1].toFixed(3))); for (const nd of p.n) if (fk.has(nd.x.toFixed(3) + ',' + nd.y.toFixed(3))) { nd.keep = true; nd.s = 0; } }
       paths.push(p); }
+    for (const l of fatLoops) { const p = BZ.fromPolyline(l, Object.assign({}, opt, { closed: true, corner: corner + 5 })); if (p) { p.solid = true; paths.push(p); } }
     const cuts = loops.slice(0, opts.allCuts ? loops.length : 1).map(l => { const p = BZ.fromPolyline(l, Object.assign({}, opt, { closed: true, tol: Math.max(0.8, lw * 0.25), lineTol: Math.max(0.9, lw * 0.3), corner: corner + 5 })); if (p) p.cut = true; return p; }).filter(Boolean);
+    if (unhook(paths.concat(cuts), lw)) { const used = new Set(); for (const p of paths.concat(cuts)) for (const nd of [p.n[0], p.n[p.n.length - 1]]) used.add(nd.x.toFixed(4) + ',' + nd.y.toFixed(4));
+      for (const p of paths) { for (const nd of p.n) if (used.has(nd.x.toFixed(4) + ',' + nd.y.toFixed(4))) nd.keep = true; BZ.mergeCollinear(p, 0.5); } }
     alignThrough(paths, 10, 6); if (opts.straighten !== false) snapHV(paths.concat(cuts), 3.5, lw * 2); settleEnds(paths.concat(cuts), lw * 0.45); if (opts.straighten !== false) snapHV(paths.concat(cuts), 3.5, lw * 2);
     for (const p of paths.concat(cuts)) { for (const nd of p.n) delete nd.keep; if (back !== 1) for (const nd of p.n) { nd.x *= back; nd.y *= back; if (nd.i) nd.i = [nd.i[0] * back, nd.i[1] * back]; if (nd.o) nd.o = [nd.o[0] * back, nd.o[1] * back]; } }
-    return { paths: paths.concat(cuts), lw: lw * back, darkBg, parts, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: BZ.countNodes(cuts) }; }
+    return { paths: paths.concat(cuts), lw: lw * back, darkBg, parts, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: BZ.countNodes(cuts), solids: fatLoops.length, dbg }; }
   function area(p) { let a = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += (p[j][0] + p[i][0]) * (p[j][1] - p[i][1]); return a / 2; }
   // outline around the lines at a distance (used when there is no traced edge, e.g. an imported SVG)
   function outerCut(mask, w, h, off, bridge) { const R = dil(mask, w, h, off + bridge), F = fillHoles(R, w, h), C = ero(F, w, h, bridge), C2 = fillHoles(C, w, h), f = new Float32Array(w * h);
