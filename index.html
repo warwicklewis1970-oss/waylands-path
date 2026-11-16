@@ -66,6 +66,7 @@
           <button id="nBreak" data-needsel title="Break the line at the point">✂<span>Break</span></button>
           <button id="nJoin" data-needsel title="Join two ends (or run one end on to the next line)">⊶<span>Join</span></button>
           <button id="nSeg" data-needsel class="danger" title="Delete the piece between two picked points">✕<span>Piece</span></button>
+          <button id="nCut" title="Make the picked line(s) cut lines (grey), or back to etch"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="#9aa0a4" stroke-width="3.2"/><path d="M9 12h6" stroke="currentColor" stroke-width="2"/></svg><span id="nCutL">Make cut</span></button>
         </div>
         <details class="more"><summary>More</summary>
           <div class="nudge"><button data-nudge="-1,0" aria-label="Nudge left">◀</button><button data-nudge="0,-1" aria-label="Nudge up">▲</button><button data-nudge="0,1" aria-label="Nudge down">▼</button><button data-nudge="1,0" aria-label="Nudge right">▶</button>
@@ -124,13 +125,16 @@
       <div class="hint">Made for line drawings: AI line art, logos, colouring-page pictures. Photos are not traced.</div>
     </div></details>
     <details name="acc" id="sec-trace"><summary>2 · Trace</summary><div class="body">
+      <div class="lbl">The drawing is</div>
+      <div class="seg wide3" id="tmode"><button data-tmode="normal">Dark lines on light paper</button><button data-tmode="light">Light lines on dark</button><button data-tmode="auto">Auto</button></div>
+      <label class="rg"><span>Remove faint lines</span><input type="range" id="faint" min="0" max="10" step="1" value="4"><output id="faintOut">4</output></label>
+      <div class="hint">Raise it if ruled paper lines, shadows or smudges get traced. Lower it if faint parts of your drawing go missing.</div>
       <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
       <label class="rg"><span>Corners</span><input type="range" id="corners" min="1" max="10" step="1" value="5"><output id="cornersOut">5</output></label>
       <div class="hint">Detail: higher keeps short bits, lower clears specks. Corners: higher finds more sharp corners.</div>
       <div class="hint" id="traceInfo"></div>
       <details class="adv"><summary>Advanced</summary>
         <label class="chk"><input type="checkbox" id="straighten" checked>Make nearly level / upright lines exactly straight</label>
-        <label class="chk"><input type="checkbox" id="invert">Light lines on a dark background</label>
         <div class="row"><button id="retraceBtn" class="grow">↻ Trace again</button></div>
       </details>
       <div class="hint">Moving these re-traces the picture and replaces your edits (Undo brings them back).</div>
@@ -159,8 +163,28 @@
       <div class="hint">Tap a step to open it. Power is % of your laser max S, speed in mm/min. Written into each .nc file.</div>
       <div id="lzSteps"></div>
       <label><span>Laser max S ($30)</span><input type="number" id="smax" value="1000" min="1" max="100000" step="1"></label>
+      <div class="row"><button id="burnReset" class="grow">↺ Reset to defaults</button></div>
+      <div class="hint">Defaults: Engrave lines Vector 25% at 3000 mm/min. Cut Vector 100% at 1000 mm/min, 3 passes, each cut line gets all its passes, holes first. Your changes are kept on this device.</div>
     </div></details>
-    <details name="acc" id="sec-export"><summary>6 · Export &amp; share</summary><div class="body">
+    <details name="acc" id="sec-sheet"><summary>6 · Sheet (blank &amp; copies)</summary><div class="body">
+      <label class="chk big"><input type="checkbox" id="shOn">Place on a blank</label>
+      <div id="shBody">
+        <div class="g2">
+          <label><span>Blank width (mm)</span><input type="number" id="shW" inputmode="decimal" min="10" max="2000" step="any" value="200"></label>
+          <label><span>Blank height (mm)</span><input type="number" id="shH" inputmode="decimal" min="10" max="2000" step="any" value="200"></label>
+          <label><span>Margin (mm)</span><input type="number" id="shM" inputmode="decimal" min="0" max="200" step="any" value="5"></label>
+          <label><span>Gap between copies (mm)</span><input type="number" id="shGap" inputmode="decimal" min="0" max="200" step="any" value="5"></label>
+          <label><span>Copies across</span><input type="number" id="shNx" inputmode="numeric" min="1" max="50" step="1" value="1"></label>
+          <label><span>Copies down</span><input type="number" id="shNy" inputmode="numeric" min="1" max="50" step="1" value="1"></label>
+        </div>
+        <div class="seg wide2" id="shPlace"><button data-place="centre" class="on">Centre on blank</button><button data-place="margin">Bottom-left at margin</button></div>
+        <div class="row"><button id="shFit" class="grow">▦ Fit as many as possible</button></div>
+        <canvas id="shPrev" class="shprev" width="600" height="600" aria-label="Blank preview"></canvas>
+        <div class="hint" id="shInfo"></div>
+      </div>
+      <div class="hint" id="shOff">Off: the laser 0,0 is the bottom-left corner of the design itself.</div>
+    </div></details>
+    <details name="acc" id="sec-export"><summary>7 · Export &amp; share</summary><div class="body">
       <div class="hint" id="exSummary"></div>
       <div class="row"><button id="shareBtn" class="accent grow big2">📤 Share laser files</button></div>
       <div class="row"><button id="saveZipBtn" class="grow">💾 Save laser zip</button><button id="svgBtn" class="grow">⬇ SVG only</button></div>

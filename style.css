@@ -95,7 +95,7 @@ body.home header,body.home main{visibility:hidden}
 .nbtns button.dim{opacity:.55}
 .more>summary,.adv>summary{cursor:pointer;color:var(--dim);font-size:13px;padding:4px 0}
 .more .row{margin-top:6px}
-@media (min-width:900px){.nbtns{grid-template-columns:repeat(9,1fr)}}
+@media (min-width:900px){.nbtns{grid-template-columns:repeat(10,1fr)}}
 /* v3.2 guided Line tool and Shapes tool */
 .gopts{flex-direction:column;align-items:stretch;gap:6px}
 .hintbar{background:#fff4e6;color:#5c2d00;border:1px solid #ffc078;border-radius:10px;padding:9px 12px;font-size:16px;line-height:1.35}
@@ -112,3 +112,7 @@ body.home header,body.home main{visibility:hidden}
 @media (max-width:420px){.shapes{grid-template-columns:repeat(4,1fr)}}
 #toolOpts{max-height:46vh;overflow-y:auto}
 .ic{width:26px;height:26px;display:block}.tool .ic{width:24px;height:24px;margin:1px 0 2px}.shapes .ic{width:26px;height:26px;margin-bottom:2px}
+.lbl{font-size:13px;color:var(--dim);margin:2px 0 4px}
+.seg.wide3{display:flex;margin:0 0 10px}.seg.wide3 button{flex:1;padding:4px 6px;font-size:13px;line-height:1.15;min-height:44px}
+.shprev{width:min(100%,420px,27dvh);aspect-ratio:1/1;display:block;margin:8px auto 4px;background:#0d1418;border:1px solid var(--line);border-radius:8px}
+.nbtns button.iscut{background:#4b4f52;color:#fff}

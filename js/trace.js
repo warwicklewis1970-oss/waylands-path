@@ -5,7 +5,7 @@
 // corners, ends, junctions and where a curve needs one. Straight runs are exact lines; near level/upright lines are snapped.
 'use strict';
 const T = (() => {
-  const VERSION = 3.1;
+  const VERSION = 3.3;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   function grey(rgba, w, h) { const g = new Float32Array(w * h);
     for (let i = 0, p = 0; i < g.length; i++, p += 4) { const a = rgba[p + 3] / 255; // transparent = white (never burns)
@@ -26,6 +26,42 @@ const T = (() => {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let a = 0; for (let i = -r; i <= r; i++) { const xx = x + i < 0 ? 0 : x + i >= w ? w - 1 : x + i; a += g[y * w + xx] * k[i + r]; } t[y * w + x] = a; }
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let a = 0; for (let i = -r; i <= r; i++) { const yy = y + i < 0 ? 0 : y + i >= h ? h - 1 : y + i; a += t[yy * w + x] * k[i + r]; } o[y * w + x] = a; }
     return o; }
+  // paper lighting: estimate the paper brightness everywhere (blocks -> fill strokes -> smooth fit for blocks covered by ink), divide it out
+  function paperBg(g, w, h) { const B = Math.max(8, Math.round(Math.max(w, h) / 60)), gw = Math.ceil(w / B), gh = Math.ceil(h / B), m = new Float32Array(gw * gh);
+    for (let by = 0; by < gh; by++) for (let bx = 0; bx < gw; bx++) { const H = new Uint32Array(64); let n = 0;
+      for (let y = by * B; y < Math.min(h, by * B + B); y++) for (let x = bx * B; x < Math.min(w, bx * B + B); x++) { H[Math.min(63, g[y * w + x] * 64 | 0)]++; n++; }
+      let s = 0, k = 63; for (; k > 0; k--) { s += H[k]; if (s >= n * 0.1) break; } m[by * gw + bx] = (k + 0.5) / 64; } // 90th percentile = the paper
+    const filt = (a, r, mx) => { const o = new Float32Array(a.length); for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let v = mx ? 0 : 1;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue; const q = a[yy * gw + xx]; v = mx ? Math.max(v, q) : Math.min(v, q); } o[y * gw + x] = v; } return o; };
+    let c = filt(filt(m, 1, true), 1, false);
+    // least-squares cubic surface through the paper blocks (upper envelope), used where a block is covered by a big dark shape
+    const terms = (x, y) => [1, x, y, x * x, x * y, y * y, x * x * x, x * x * y, x * y * y, y * y * y], nt = 10; let keep = new Uint8Array(c.length).fill(1), fit = null;
+    for (let it = 0; it < 5; it++) { const A = Array.from({ length: nt }, () => new Float64Array(nt + 1));
+      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { const i = y * gw + x; if (!keep[i]) continue; const t = terms(x / gw - 0.5, y / gh - 0.5);
+        for (let a = 0; a < nt; a++) { for (let b = 0; b < nt; b++) A[a][b] += t[a] * t[b]; A[a][nt] += t[a] * c[i]; } }
+      for (let a = 0; a < nt; a++) A[a][a] += 1e-6;
+      for (let col = 0; col < nt; col++) { let pr = col; for (let r = col + 1; r < nt; r++) if (Math.abs(A[r][col]) > Math.abs(A[pr][col])) pr = r; [A[col], A[pr]] = [A[pr], A[col]];
+        const pv = A[col][col] || 1e-12; for (let r = 0; r < nt; r++) { if (r === col) continue; const f = A[r][col] / pv; for (let k = col; k <= nt; k++) A[r][k] -= f * A[col][k]; } }
+      const co = A.map((r, i) => r[nt] / (r[i] || 1e-12)); fit = (x, y) => terms(x / gw - 0.5, y / gh - 0.5).reduce((s2, t, i) => s2 + t * co[i], 0);
+      let kept = 0; for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { const i = y * gw + x, f = fit(x, y); keep[i] = c[i] >= f - 0.05 - (it < 2 ? 0.1 : 0) ? 1 : 0; kept += keep[i]; } if (kept < 10) break; }
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { const i = y * gw + x, f = fit(x, y); if (c[i] < f * 0.8) c[i] = Math.min(1, Math.max(c[i], f)); }
+    c = blur(c, gw, gh, 0.8); const bg = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) { const fy = Math.min(gh - 1, Math.max(0, (y + 0.5) / B - 0.5)), y0 = fy | 0, y1 = Math.min(gh - 1, y0 + 1), ty = fy - y0;
+      for (let x = 0; x < w; x++) { const fx = Math.min(gw - 1, Math.max(0, (x + 0.5) / B - 0.5)), x0 = fx | 0, x1 = Math.min(gw - 1, x0 + 1), tx = fx - x0;
+        bg[y * w + x] = (c[y0 * gw + x0] * (1 - tx) + c[y0 * gw + x1] * tx) * (1 - ty) + (c[y1 * gw + x0] * (1 - tx) + c[y1 * gw + x1] * tx) * ty; } }
+    return bg; }
+  // light paper: divide out the lighting, then anything fainter than the "remove faint lines" level is paper
+  function flattenPaper(g, w, h, faint) { const bg = paperBg(g, w, h), o = new Float32Array(w * h), thr = 0.06 + 0.04 * clamp(faint, 0, 10);
+    for (let i = 0; i < o.length; i++) { const v = Math.min(1, g[i] / Math.max(0.04, bg[i])); o[i] = 1 - v < thr ? 1 : v; } return o; }
+  // colour photo of paper: white-balance each channel against its own paper brightness, then keep the brightest -
+  // blue / red ruled lines and margins nearly vanish even under warm lamp light; black or grey pen and pencil stay dark
+  function flattenPaperRGB(rgba, w, h, faint) { const N = w * h, out = new Float32Array(N), ch = new Float32Array(N), thr = 0.06 + 0.04 * clamp(faint, 0, 10);
+    for (let c = 0; c < 3; c++) { for (let i = 0, p = 0; i < N; i++, p += 4) { const a = rgba[p + 3] / 255; ch[i] = rgba[p + c] / 255 * a + (1 - a); }
+      const bg = paperBg(ch, w, h); for (let i = 0; i < N; i++) { const v = Math.min(1, ch[i] / Math.max(0.04, bg[i])); if (!c || v > out[i]) out[i] = v; } }
+    for (let i = 0; i < N; i++) if (1 - out[i] < thr) out[i] = 1; return out; }
+  // which border sides are mostly dark
+  function sidesDark(dark, w, h) { const f = [0, 0, 0, 0]; for (let x = 0; x < w; x++) { f[0] += dark[x]; f[1] += dark[(h - 1) * w + x]; } for (let y = 0; y < h; y++) { f[2] += dark[y * w]; f[3] += dark[y * w + w - 1]; }
+    return [f[0] / w, f[1] / w, f[2] / h, f[3] / h]; }
   // share of mid-tones: photos have lots, line drawings / logos have few
   function removeSpecks(m, w, h, minArea) { if (minArea < 1) return 0; const seen = new Uint8Array(w * h), st = new Int32Array(w * h); let removed = 0;
     for (let i = 0; i < m.length; i++) { if (!m[i] || seen[i]) continue; let n = 0, top = 0; st[top++] = i; seen[i] = 1; const comp = [];
@@ -277,18 +313,24 @@ const T = (() => {
     // small pictures: enlarge smoothly first so thin lines are several pixels wide
     const big = Math.max(w, h); if (big < 1000) { up = Math.min(3, 1300 / big); const W2 = Math.round(w * up), H2 = Math.round(h * up); d = upscale(d, w, h, W2, H2); up = W2 / w; w = W2; h = H2; }
     const back = 1 / (P.sc * up), N = w * h;
-    const g = blur(autoContrast(grey(d, w, h)), w, h, 0.6), th = otsu(g); let dark = new Uint8Array(N);
+    // mode: 'auto' | 'normal' (dark lines on light paper) | 'light' (light lines on dark). Old projects: invert box = 'light'.
+    const mode = opts.mode === 'normal' || opts.mode === 'light' ? opts.mode : opts.mode === 'auto' ? 'auto' : opts.invert ? 'light' : 'auto', faint = opts.faint == null ? 4 : +opts.faint;
+    const flip = a => { for (let i = 0; i < a.length; i++) a[i] = 1 - a[i]; return a; };
+    let g = blur(autoContrast(mode === 'light' ? flip(grey(d, w, h)) : grey(d, w, h)), w, h, 0.6), th = otsu(g); let dark = new Uint8Array(N);
     for (let i = 0; i < N; i++) dark[i] = g[i] < th ? 1 : 0;
+    // dark surround (cream shapes on a dark background, like AI tower art) only in Auto, and only if every side of the picture is dark -
+    // a shadow across a photo of paper darkens one or two sides, never all four
+    const sd = sidesDark(dark, w, h), darkBg = mode === 'auto' && Math.min(...sd) > 0.6 && (sd[0] + sd[1] + sd[2] + sd[3]) / 4 > 0.75;
+    if (!darkBg) { g = blur(autoContrast(mode === 'light' ? flattenPaper(flip(grey(d, w, h)), w, h, faint) : flattenPaperRGB(d, w, h, faint)), w, h, 0.6);
+      th = otsu(g); for (let i = 0; i < N; i++) dark[i] = g[i] < th ? 1 : 0; }
     // faint thin lines: darker than their close surroundings even if not darker than the global threshold
     let inkAt = null; { let s0 = 0, n0 = 0, s1 = 0, n1 = 0; for (let i = 0; i < N; i++) { if (g[i] < th) { s0 += g[i]; n0++; } else { s1 += g[i]; n1++; } } const lo = n0 ? s0 / n0 : 0, hi = n1 ? s1 / n1 : 1;
-      if (!opts.invert && hi - lo > 0.16) { const R = Math.round(clamp(lineWidth(dark, w, h) * 1.1, 2, 25)), cl = minF(maxF(g, w, h, R), w, h, R), lim = (hi - lo) * 0.3, mid = lo + (hi - lo) * 0.75;
+      if (hi - lo > 0.16) { const R = Math.round(clamp(lineWidth(dark, w, h) * 1.1, 2, 25)), cl = minF(maxF(g, w, h, R), w, h, R), lim = (hi - lo) * 0.3, mid = lo + (hi - lo) * 0.75;
         for (let i = 0; i < N; i++) if (!dark[i] && cl[i] - g[i] > lim && g[i] < mid) dark[i] = 1;
         // how much a pixel (or its neighbours) looks like a faint line: used to decide whether a gap in a line is real
         inkAt = (x, y) => { let b = 0; const xi = Math.round(x), yi = Math.round(y); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = xi + dx, yy = yi + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const i = yy * w + xx; b = Math.max(b, (cl[i] - g[i]) / (hi - lo), g[i] < th ? 1 : 0); } return b; }; } }
     const inkAlong = (a, b) => { if (!inkAt) return 0; const n = Math.max(2, Math.ceil(D(a, b))); let ok = 0; for (let k = 0; k <= n; k++) if (inkAt(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) > 0.18) ok++; return ok / (n + 1); };
-    if (opts.invert) dark = inv(dark);
-    let bd = 0, bn = 0; for (let x = 0; x < w; x++) { bd += dark[x] + dark[(h - 1) * w + x]; bn += 2; } for (let y = 0; y < h; y++) { bd += dark[y * w] + dark[y * w + w - 1]; bn += 2; }
-    const darkBg = bd / bn > 0.5, minArea0 = 0; let lw = lineWidth(dark, w, h); const minArea = Math.max(40, N * 0.0015);
+    const minArea0 = 0; let lw = lineWidth(dark, w, h); const minArea = Math.max(40, N * 0.0015);
     // design area: everything inside the outer edge of the artwork
     let region;
     if (darkBg) { const light = inv(dark); removeSpecks(light, w, h, Math.max(8, lw * lw)); region = fillHoles(close(light, w, h, lw * 0.6 + 1), w, h); }
@@ -354,7 +396,7 @@ const T = (() => {
       for (const p of paths) { for (const nd of p.n) if (used.has(nd.x.toFixed(4) + ',' + nd.y.toFixed(4))) nd.keep = true; BZ.mergeCollinear(p, 0.5); } }
     alignThrough(paths, 10, 6); if (opts.straighten !== false) snapHV(paths.concat(cuts), 3.5, lw * 2); settleEnds(paths.concat(cuts), lw * 0.45); if (opts.straighten !== false) snapHV(paths.concat(cuts), 3.5, lw * 2);
     for (const p of paths.concat(cuts)) { for (const nd of p.n) delete nd.keep; if (back !== 1) for (const nd of p.n) { nd.x *= back; nd.y *= back; if (nd.i) nd.i = [nd.i[0] * back, nd.i[1] * back]; if (nd.o) nd.o = [nd.o[0] * back, nd.o[1] * back]; } }
-    return { paths: paths.concat(cuts), lw: lw * back, darkBg, parts, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: BZ.countNodes(cuts), solids: fatLoops.length, dbg }; }
+    return { paths: paths.concat(cuts), lw: lw * back, darkBg, mode, parts, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: BZ.countNodes(cuts), solids: fatLoops.length, dbg }; }
   function area(p) { let a = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += (p[j][0] + p[i][0]) * (p[j][1] - p[i][1]); return a / 2; }
   // outline around the lines at a distance (used when there is no traced edge, e.g. an imported SVG)
   function outerCut(mask, w, h, off, bridge) { const R = dil(mask, w, h, off + bridge), F = fillHoles(R, w, h), C = ero(F, w, h, bridge), C2 = fillHoles(C, w, h), f = new Float32Array(w * h);
