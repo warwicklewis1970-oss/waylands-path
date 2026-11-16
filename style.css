@@ -137,3 +137,11 @@ body.menuOpen #panel{transform:none}
 .stepper{display:flex;align-items:center;gap:5px;flex:1 1 100%}.stepper .lbl2{color:var(--dim);font-size:13px;flex:1}.stepper button{min-width:46px;font-size:20px;min-height:44px}
 #toolOpts{min-height:70px}
 #toast{bottom:auto;top:calc(var(--hdr) + 40px)}
+/* v4.1 */
+#tools{grid-template-columns:repeat(8,1fr)}
+.vtag{font-size:11px;font-weight:700;color:#082522;background:var(--acc);border-radius:8px;padding:2px 6px;white-space:nowrap}
+.t4b.acts>button{flex:1 1 22%;min-height:52px;font-size:15px}
+@media (max-width:520px){.t4b.acts>button{flex:1 1 45%}}
+#updBar{top:calc(var(--hdr) + 6px);bottom:auto;font-size:16px;font-weight:600;padding:8px 8px 8px 16px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:60}
+#updBar button{min-height:46px;font-size:16px;font-weight:700;background:#111;color:#fff;border:0}
+@media (max-width:860px){.tool span{font-size:10px}}

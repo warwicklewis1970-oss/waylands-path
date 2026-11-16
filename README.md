@@ -14,6 +14,11 @@ Sister app to [Wayland Forge](https://warwicklewis1970-oss.github.io/wayland-for
 
 Your last project is kept on the device (IndexedDB).
 
+## v4.1
+- **Select** tool (first, on by default): tap a line and the whole line turns blue (pieces that carry straight on through a junction are included). Action bar: **Delete line**, **Break** (tap where it stops, then where it starts again - snaps along the line - red dashed preview, Confirm), **Thickness**, **Make cut / Make etch**. Drag moves the picture.
+- **Updates arrive by themselves:** the app checks `version.json` when it opens and whenever it comes back to the front; a new version reloads by itself once you have stopped touching the screen for a few seconds (your project is saved and reopened), or tap the **Update now** banner. Version shown in the top bar.
+- No laser changes.
+
 ## v4
 - **Simple editor:** the 7 tools above replace Move / Nodes / Line / Shapes / Pen / Delete. Menu sheet closed by default. Taps pick the nearest etch line - the outer cut never steals a tap.
 - **Thickness / double line (laser change, only on lines you set):** a line with a thickness W is burnt as ceil((W−lw)/lw)+1 passes side by side, spread evenly across W−lw (lw = Line width, 0.3 mm default), e.g. 0.8 mm = 3 passes at −0.25 / 0 / +0.25 mm. A double line at distance D is two such lines at ±D/2 (passes that would land on top of each other are dropped). Applies to Vector, Line To Line and Dithering exports and the SVGs; the read-me lists it. Lines without a thickness are byte-for-byte what v3.3 wrote.

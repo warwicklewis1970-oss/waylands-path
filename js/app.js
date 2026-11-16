@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4';
+const APP_VERSION = 'v4.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -483,7 +483,7 @@ $('newBtn').onclick = async () => { await saveNow(); $('panelFile').click(); };
 // ---------- help ----------
 const HELP = [
   ['🖼️', 'Open a line drawing', 'Open a PNG/JPG line drawing or an SVG. Black lines are what the laser etches; the <b>grey line</b> round the outside is where it cuts the piece out. Pick a tool at the bottom. <b>Two fingers</b> always move and zoom the picture; <b>⤢ Fit</b> re-centres it.'],
-  ['✏️', 'The 7 tools (tap one, tap again to put it away)', '<b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area, tap Cut out - it becomes a hole.<br><b>Clear space</b>: tap points round an area, tap Clear - every line inside goes.'],
+  ['✏️', 'The 8 tools (tap one, tap again to put it away)', '<b>Select</b>: tap a line - the whole line turns blue - then <b>Delete line</b>, <b>Break</b> (tap where it stops and starts again), <b>Thickness</b> or <b>Make cut</b>.<br><b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area, tap Cut out - it becomes a hole.<br><b>Clear space</b>: tap points round an area, tap Clear - every line inside goes.'],
   ['☰', 'Menu and Export', '<b>☰ Menu</b> holds the picture, trace, size, laser, sheet and <b>Add shape</b>. <b>Export</b> (top bar) makes the LaserGRBL files. <b>↶ Undo</b> undoes anything.'],
 ];
 let helpI = 0;
@@ -498,15 +498,31 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: 7 simple tools, eraser, draw, thick and double lines, tighter cut'; $('verOut').textContent = APP_VERSION;
-$('updBtn').onclick = () => location.reload();
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Select a whole line → Delete, Break, Thickness, Make cut; updates arrive by themselves'; $('verOut').textContent = APP_VERSION;
+// ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
+$('verTag').textContent = APP_VERSION;
+let lastAct = Date.now(), updWant = null, updTimer = null;
+['pointerdown', 'keydown', 'input'].forEach(ev => window.addEventListener(ev, () => { lastAct = Date.now(); }, true));
+const busyNow = () => !!(gest || pinch || (window.T4 && (T4.PP.live || T4.BR.a || T4.CL.pts.length || T4.SL.mode)) || !$('busy').hidden || !$('help').hidden || (tool === 'line' && window.T2 && T2.LN && T2.LN.a));
+async function doUpdate() { try { if (!document.body.classList.contains('home')) { await saveNow(); sessionStorage.setItem('wp-resume', '1'); } sessionStorage.setItem('wp-upd-for', updWant || '?'); } catch (e) { /* */ } location.reload(); }
+function updateReady(v) { if (sessionStorage.getItem('wp-upd-for') === (v || '?') && v && v === APP_VERSION) return; updWant = v || updWant || 'new';
+  if (sessionStorage.getItem('wp-upd-for') === updWant && updWant !== 'new') { $('updMsg').textContent = `Version ${updWant} is ready`; $('updBar').hidden = false; return; } // already reloaded once for it: no loop, just the banner
+  $('updMsg').textContent = `New version${v ? ' ' + v : ''} ready`; $('updBar').hidden = false;
+  if (document.body.classList.contains('home')) { doUpdate(); return; }
+  clearInterval(updTimer); updTimer = setInterval(() => { if (!busyNow() && Date.now() - lastAct > 4000) { clearInterval(updTimer); doUpdate(); } }, 1000); }
+$('updBtn').onclick = doUpdate;
+async function checkVersion() { if (location.protocol === 'file:') return; try { const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return; const j = await r.json();
+    if (j && j.v && j.v !== APP_VERSION) { if (window._reg) window._reg.update().catch(() => {}); updateReady(j.v); } } catch (e) { /* offline: fine */ } }
+checkVersion(); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkVersion(); if (window._reg) window._reg.update().catch(() => {}); } });
+window.addEventListener('focus', () => checkVersion()); setInterval(checkVersion, 20 * 60 * 1000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
   const had = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) $('updBar').hidden = false; });
-  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { const chk = () => reg.update().catch(() => {}); chk(); setInterval(chk, 30 * 60 * 1000);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') chk(); });
-    reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) $('updBar').hidden = false; }); }); }).catch(err => console.warn('SW failed', err)); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) checkVersion().then(() => { if ($('updBar').hidden) updateReady(null); }); });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { window._reg = reg; reg.update().catch(() => {});
+    reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) w.postMessage('skip'); }); }); }).catch(err => console.warn('SW failed', err)); });
+// after an update reload, carry straight on with the project
+if (sessionStorage.getItem('wp-resume') === '1') { sessionStorage.removeItem('wp-resume'); setTimeout(() => resume().then(ok => { if (ok) toast(`Updated to ${APP_VERSION} - your project is just as you left it`, 3500); }).catch(() => {}), 50); }
 window.addEventListener('resize', () => resize()); new ResizeObserver(() => resize()).observe($('stageWrap'));
 window.addEventListener('pagehide', () => { saveNow(); });
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
-window.WP = { openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
