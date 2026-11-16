@@ -49,6 +49,8 @@
       <button data-tool="erase" class="tool" title="Erase lines">⌫<span>Erase</span></button>
       <button data-tool="draw" class="tool" title="Draw a new line">✎<span>Draw</span></button>
       <button data-tool="join" class="tool" title="Join loose ends">🔗<span>Join</span></button>
+      <button data-tool="points" class="tool" title="Move single points">⦿<span>Points</span></button>
+      <button data-tool="select" class="tool" title="Drag a box to select points">⬚<span>Select</span></button>
     </div>
     <div id="toolOpts">
       <div data-opts="move" class="topts">Drag to move · pinch or mouse wheel to zoom. Pick a tool to edit.</div>
@@ -59,16 +61,27 @@
       </div>
       <div data-opts="draw" class="topts" hidden>Draw with one finger (or the mouse). Lines are smoothed and snap to loose ends. Two fingers move the view.</div>
       <div data-opts="join" class="topts" hidden><span class="tip">Drag from one loose end (orange dot) to another.</span><button id="joinAuto2" class="accent">Join gaps</button></div>
+      <div data-opts="points select" class="topts ptopts" hidden>
+        <div class="tip" id="ptTip">Tap a point to pick it, then drag it or use the arrows.</div>
+        <div class="nudge"><button data-nudge="-1,0" aria-label="Nudge left">◀</button><button data-nudge="0,-1" aria-label="Nudge up">▲</button><button data-nudge="0,1" aria-label="Nudge down">▼</button><button data-nudge="1,0" aria-label="Nudge right">▶</button>
+          <select id="nudgeMm" aria-label="Nudge step"><option value="0.1">0.1 mm</option><option value="0.5" selected>0.5 mm</option><option value="1">1 mm</option></select></div>
+        <div class="ptbtns"><button id="ptAdd">＋ Add points</button><button id="ptFit" title="Snap the picked points onto the grey edge">🧲 Fit to edge</button><button id="ptReduce">− Reduce points</button><button id="ptDel" class="danger">✕ Delete point</button></div>
+        <div class="selinfo" id="selInfo">No points picked</div>
+      </div>
     </div>
   </div>
   <aside id="panel">
     <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
       <div class="row"><label class="filebtn grow accent">📷 Open photo, PNG, JPG or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
       <label class="chk"><input type="checkbox" id="showPhoto" checked>Show the picture faintly behind the lines</label>
+      <label class="chk"><input type="checkbox" id="showGuide" checked>Show the grey edge guide (never burned)</label>
+      <label class="chk"><input type="checkbox" id="snapGuide">Draw, Join and Points snap to the grey edge</label>
+      <div class="hint" id="guideInfo"></div>
       <div class="hint" id="srcInfo">No picture yet.</div>
     </div></details>
     <details name="acc" id="sec-trace"><summary>2 · Trace</summary><div class="body">
-      <div class="seg wide2"><button id="modeLines" class="on">Centre lines</button><button id="modeOutline">Outlines</button></div>
+      <div class="seg wide2"><button id="modeLines" class="on">Lines</button><button id="modeOutline">Outlines</button><button id="modeOutside">Outside edge</button></div>
+      <div class="hint" id="modeHint"></div>
       <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
       <label class="rg"><span>Remove specks</span><input type="range" id="specks" min="0" max="10" step="1" value="3"><output id="specksOut">3</output></label>
       <div class="g2">
@@ -93,7 +106,8 @@
       </div>
       <div class="hint">Width is the line art. Height follows (aspect kept). Line width is for the SVG and the Line To Line / Dithering modes.</div>
       <label class="chk big"><input type="checkbox" id="cutOn">Outer cut (cut out around the artwork)</label>
-      <div id="cutBox" hidden><label><span>Gap from the lines (mm)</span><input type="number" id="cutOff" inputmode="decimal" min="0.5" max="50" step="any" value="3"></label>
+      <div id="cutBox" hidden><label><span>Cut follows</span><select id="cutFrom"><option value="lines">Around the lines</option><option value="edge">The picture's outside edge</option></select></label>
+        <label><span>Gap (mm)</span><input type="number" id="cutOff" inputmode="decimal" min="0.5" max="50" step="any" value="3"></label>
         <div class="hint" id="cutInfo"></div></div>
     </div></details>
     <details name="acc" id="sec-laser"><summary>5 · Laser steps</summary><div class="body">
