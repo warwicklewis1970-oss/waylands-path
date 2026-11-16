@@ -1,12 +1,12 @@
-// Waylands Path v3 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
+// Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v3.3';
+const APP_VERSION = 'v4';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
 // ---------- state ----------
 const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detail: 5, corners: 5, mode: 'auto', faint: 4, straighten: true },
-  widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 3, gapMm: 1.5, shortMm: 2, showPhoto: true, saved: 0, ver: 3, sheet: SHEET0() });
+  widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
 function SHEET0() { return { on: false, W: 200, H: 200, margin: 5, gap: 5, nx: 1, ny: 1, place: 'centre' }; }
 let S = DEFAULTS(), srcImg = null, srcEl = null, undoSt = [], redoSt = [], tool = 'move';
 let sel = new Set(), act = new Set(), lastTap = null, pen = null, skip = { mode: 'skip', first: -1 }, delMode = 'stretch', lw = 0;
@@ -15,8 +15,8 @@ const cv = $('stage'), ctx = cv.getContext('2d');
 const toast = (msg, ms = 2600) => { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, ms); };
 const snap = () => BZ.clone(S.paths);
 function pushUndo() { undoSt.push(snap()); if (undoSt.length > 50) undoSt.shift(); redoSt = []; updUndo(); }
-function undo() { if (!undoSt.length) return; redoSt.push(snap()); S.paths = undoSt.pop(); pen = null; clearSel(); changed(); }
-function redo() { if (!redoSt.length) return; undoSt.push(snap()); S.paths = redoSt.pop(); pen = null; clearSel(); changed(); }
+function undo() { if (!undoSt.length) return; redoSt.push(snap()); S.paths = undoSt.pop(); pen = null; clearSel(); changed(); if (window.T4) T4.reset(); }
+function redo() { if (!redoSt.length) return; undoSt.push(snap()); S.paths = redoSt.pop(); pen = null; clearSel(); changed(); if (window.T4) T4.reset(); }
 function updUndo() { $('undoBtn').disabled = !undoSt.length; $('redoBtn').disabled = !redoSt.length; }
 const etch = () => S.paths.filter(p => !p.cut), cuts = () => S.paths.filter(p => p.cut);
 const bbAll = () => BZ.bbox(S.paths);
@@ -64,18 +64,19 @@ function draw() { if (drawQ) return; drawQ = true; requestAnimationFrame(() => {
 function tracePath(p) { const n = p.n; if (!n.length) return; ctx.moveTo(n[0].x, n[0].y); for (let k = 0; k < BZ.nseg(p); k++) { const s = BZ.seg(p, k); if (s.line) ctx.lineTo(s.b.x, s.b.y); else ctx.bezierCurveTo(s.C[1][0], s.C[1][1], s.C[2][0], s.C[2][1], s.b.x, s.b.y); } if (p.z) ctx.closePath(); }
 function paint() { const d = window.devicePixelRatio || 1, W = cv.width, H = cv.height; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#f6f2ea'; ctx.fillRect(0, 0, W, H);
   ctx.setTransform(d * view.s, 0, 0, d * view.s, d * view.tx, d * view.ty); const px = 1 / view.s;
-  if (S.src && S.src.w) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S.src.w, S.src.h); if (srcEl && S.showPhoto) { ctx.globalAlpha = 0.25; ctx.drawImage(srcEl, 0, 0, S.src.w, S.src.h); ctx.globalAlpha = 1; }
+  if (S.src && S.src.w) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S.src.w, S.src.h); if (srcEl && S.showPhoto) { ctx.globalAlpha = 0.18; ctx.drawImage(srcEl, 0, 0, S.src.w, S.src.h); ctx.globalAlpha = 1; }
     ctx.strokeStyle = '#d8d0c2'; ctx.lineWidth = px; ctx.strokeRect(0, 0, S.src.w, S.src.h); }
   ctx.lineCap = ctx.lineJoin = 'round';
   // grey edge = the cut line (dashed when cutting is switched off)
   ctx.strokeStyle = S.cutOn ? 'rgba(120,120,120,0.9)' : 'rgba(150,150,150,0.6)'; ctx.lineWidth = 3.2 * px; ctx.setLineDash(S.cutOn ? [] : [8 * px, 6 * px]);
   ctx.beginPath(); S.paths.forEach(p => { if (p.cut) tracePath(p); }); ctx.stroke(); ctx.setLineDash([]);
-  ctx.strokeStyle = '#151515'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); S.paths.forEach(p => { if (!p.cut) tracePath(p); }); ctx.stroke();
+  ctx.strokeStyle = '#151515'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); S.paths.forEach(p => { if (!p.cut && (!window.T4 || T4.plain(p))) tracePath(p); }); ctx.stroke(); if (window.T4) T4.paintThick(px);
   // highlighted paths (active in Nodes, first pick in Skip)
   const hi = new Set(act); if (tool === 'skip' && skip.first >= 0) hi.add(skip.first); if (pen && S.paths[pen.pi]) hi.add(pen.pi);
   if (hi.size) { ctx.strokeStyle = tool === 'skip' ? '#e8590c' : '#1971c2'; ctx.lineWidth = 2.4 * px; ctx.beginPath(); for (const pi of hi) if (S.paths[pi]) tracePath(S.paths[pi]); ctx.stroke(); }
   if (tool === 'nodes' || tool === 'pen') paintNodes(px, hi);
   if (window.T2) T2.paint(px);
+  if (window.T4) T4.paint(px);
   if (overlay && overlay.box) { const [a, b] = overlay.box; ctx.fillStyle = 'rgba(25,113,194,0.08)'; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = px; ctx.setLineDash([5 * px, 4 * px]); ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.setLineDash([]); }
   if (overlay && overlay.pt) { ctx.fillStyle = '#e8590c'; ctx.beginPath(); ctx.arc(overlay.pt[0], overlay.pt[1], 5 * px, 0, 7); ctx.fill(); } }
 const isSel = (pi, j) => sel.has(pi + ':' + j);
@@ -97,18 +98,20 @@ function cutStats() { const c = cuts(); let holes = 0; const open = c.filter(p =
   if (c.length > 1) holes = LZ.cutDepths(c.map(p => BZ.flatten(p, 0.5))).filter(d => d > 0).length;
   return { n: c.length, holes, open }; }
 function cutInfo() { const el = $('cutInfo'); if (!el) return; const c = cuts(), st = cutStats();
-  el.innerHTML = !c.length ? '<span class="warn">No cut line yet. Tap <b>Make cut line</b> to put one around the lines, or pick any line with Nodes and tap <b>Make cut</b>.</span>' :
-    `${c.length > 1 ? `${c.length} cut lines${st.holes ? ` (${st.holes} inside the outline - cut first)` : ''}. ` : 'The grey line is the cut. '}${S.cutOn ? 'Cuts burn as their own step after the engraving: holes and windows first, the outside last.' : 'Cutting is switched off - only the engraving is exported.'}${st.open ? ` <span class="warn">${st.open} cut line${st.open > 1 ? 's are' : ' is'} open (the ends don't meet), so ${st.open > 1 ? 'they' : 'it'} won't free a piece.</span>` : ''} Edit cut lines with the Nodes tool like any other line.`; lzUI(); }
+  el.innerHTML = !c.length ? '<span class="warn">No cut line yet. Tap <b>Make outer cut line</b> below to put one around the lines, or use the <b>Cut out</b> tool on any closed area.</span>' :
+    `${c.length > 1 ? `${c.length} cut lines${st.holes ? ` (${st.holes} inside the outline - cut first)` : ''}. ` : 'The grey line is the cut. '}${S.cutOn ? 'Cuts burn as their own step after the engraving: holes and windows first, the outside last.' : 'Cutting is switched off - only the engraving is exported.'}${st.open ? ` <span class="warn">${st.open} cut line${st.open > 1 ? 's are' : ' is'} open (the ends don't meet), so ${st.open > 1 ? 'they' : 'it'} won't free a piece.</span>` : ''} Drag cut lines and their points with the <b>Cut out</b> tool.`; lzUI(); }
 // cut lines the user made inside the outline (windows, slots): kept when a new outside cut line is made
 function innerCuts() { const c = cuts(); if (!c.length) return []; const ab = BZ.bbox(etch().concat(c)), A = ab ? ab.w * ab.h : 0, polys = c.map(p => BZ.flatten(p, 0.5));
   const dep = c.length > 1 ? LZ.cutDepths(polys) : [0]; return c.filter((p, i) => { const b = BZ.bbox([p]); return dep[i] > 0 || (b && b.w * b.h < A * 0.25); }); }
-function makeCut() { const e = etch(); if (!e.length) { toast('No lines to go around yet.'); return; } const ab = BZ.bbox(e), k = kmm(), offU = S.cutOff / k, brU = Math.max(4, S.cutOff) / k, lineU = S.lineMm / k, pad = offU + brU + lineU * 2 + 2 / k;
+// Tightness 1-10: how far the outside cut may bridge across pockets (10 = follows every pocket, 1 = smooth outline)
+const bridgeMm = () => { const t = Math.max(1, Math.min(10, +S.cutTight || 8)); return Math.round((11 - t) * 0.5 * 100) / 100; };
+function makeCut() { const e = etch(); if (!e.length) { toast('No lines to go around yet.'); return; } const keepIn = innerCuts(), outerOld = cuts().filter(p => !keepIn.includes(p)), all = e.concat(outerOld), ab = BZ.bbox(all), k = kmm(), offU = S.cutOff / k, brU = bridgeMm() / k, lineU = S.lineMm / k, pad = offU + brU + lineU * 2 + 2 / k;
   const s = 1100 / Math.max(ab.w + 2 * pad, ab.h + 2 * pad), w = Math.ceil((ab.w + 2 * pad) * s) + 2, h = Math.ceil((ab.h + 2 * pad) * s) + 2, ox = ab.x0 - pad, oy = ab.y0 - pad;
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.strokeStyle = '#000'; g.lineWidth = Math.max(1.5, lineU * s); g.lineCap = g.lineJoin = 'round'; g.beginPath();
-  for (const p of e) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
+  for (const p of all) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
   g.stroke(); const id = g.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = id[i * 4] < 160 ? 1 : 0;
   const loops = T.outerCut(m, w, h, offU * s, brU * s).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy]));
-  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(innerCuts(), loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); S.cutOn = true; syncInputs(); changed(); toast('Cut line made - drag its points with Nodes to adjust.'); }
+  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); S.cutOn = true; syncInputs(); changed(); toast('Outside cut line made - drag it with the Cut out tool to adjust.'); }
 // ---------- tracing ----------
 // The tracer normally runs in a helper (js/worker.js) so the screen stays smooth. If the helper can't load, says nothing within a few
 // seconds, errors, or takes far too long, tracing carries on here on the main screen instead - never "Tracing..." forever.
@@ -140,23 +143,23 @@ async function openFile(file) { if (!file) return; const isSvg = /svg/i.test(fil
   try { if (isSvg) { const r = SVGIN.importSVG(await file.text()); startProject(name); S.src = { kind: 'svg', w: r.w, h: r.h }; $('sec-trace').hidden = true; srcImg = null; srcEl = null; S.paths = r.paths; S.cutOn = false;
       const sk = []; if (r.info.skippedWhite) sk.push(`${r.info.skippedWhite} white background shape${r.info.skippedWhite > 1 ? 's' : ''}`); if (r.info.skippedText) sk.push(`${r.info.skippedText} text item(s) (convert text to paths first)`); if (r.info.skippedUse) sk.push(`${r.info.skippedUse} linked symbol(s)`);
       $('srcInfo').innerHTML = `SVG: ${r.paths.length} lines from ${r.info.shapes} shapes, curves kept.${sk.length ? `<br><span class="warn">Skipped ${sk.join(', ')}.</span>` : ''}`;
-      syncInputs(); enterApp(); openSec('sec-size'); changed(); fit(); toast(`Opened ${r.paths.length} lines from the SVG`); return; }
+      syncInputs(); enterApp(); openSec('sec-size', false); closeMenu(); changed(); fit(); toast(`Opened ${r.paths.length} lines from the SVG`); return; }
     const el = await loadImage(file), sc = Math.min(1, 1600 / Math.max(el.width, el.height)), w = Math.max(1, Math.round(el.width * sc)), h = Math.max(1, Math.round(el.height * sc));
     const alphaOk = /png|gif|webp/i.test(file.type), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); if (!alphaOk) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } g.drawImage(el, 0, 0, w, h);
     const url = c.toDataURL(alphaOk ? 'image/png' : 'image/jpeg', 0.92);
     startProject(name); S.src = { kind: 'image', w, h, url }; $('sec-trace').hidden = false; await setSource(url); $('srcInfo').textContent = `${file.name} · ${w} × ${h} px.`;
-    enterApp(); openSec('sec-trace'); fit(); await retrace(false); fit(); }
+    enterApp(); openSec('sec-trace', false); closeMenu(); fit(); await retrace(false); fit(); }
   catch (e) { console.error(e); toast(e.message || 'Could not open that file.', 4000); } }
 function loadImage(file) { return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('That picture could not be opened. Try a JPG or PNG.')); im.src = u; }); }
 function setSource(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => { srcEl = im; const c = document.createElement('canvas'); c.width = S.src.w; c.height = S.src.h; const g = c.getContext('2d'); g.drawImage(im, 0, 0, S.src.w, S.src.h);
   const d = g.getImageData(0, 0, S.src.w, S.src.h); srcImg = { data: d.data, w: S.src.w, h: S.src.h }; res(); }; im.onerror = rej; im.src = url; }); }
-function startProject(name) { const keep = { widthMm: S.widthMm, lineMm: S.lineMm, cutOff: S.cutOff, gapMm: S.gapMm, shortMm: S.shortMm, showPhoto: S.showPhoto, trace: Object.assign({}, S.trace), sheet: Object.assign(SHEET0(), S.sheet || {}) };
+function startProject(name) { const keep = { widthMm: S.widthMm, lineMm: S.lineMm, cutOff: S.cutOff, cutTight: S.cutTight, gapMm: S.gapMm, shortMm: S.shortMm, showPhoto: S.showPhoto, trace: Object.assign({}, S.trace), sheet: Object.assign(SHEET0(), S.sheet || {}) };
   S = Object.assign(DEFAULTS(), keep, { name }); undoSt = []; redoSt = []; clearSel(); pen = null; syncInputs(); }
 ['homeFile', 'stageFile', 'panelFile'].forEach(id => $(id).addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openFile(f); }));
 // ---------- inputs ----------
 function syncInputs() { $('nameBtn').textContent = (S.name || 'Untitled') + ' ✎'; $('detail').value = S.trace.detail; $('detailOut').textContent = S.trace.detail; $('corners').value = S.trace.corners; $('cornersOut').textContent = S.trace.corners;
   traceModeUI(); $('faint').value = S.trace.faint == null ? 4 : S.trace.faint; $('faintOut').textContent = $('faint').value; sheetUI(); $('straighten').checked = S.trace.straighten !== false; $('showPhoto').checked = S.showPhoto; $('widthMm').value = S.widthMm; $('lineMm').value = S.lineMm;
-  $('cutOn').checked = S.cutOn; $('cutOff').value = S.cutOff; $('gapMm').value = S.gapMm; $('shortMm').value = S.shortMm; $('sec-trace').hidden = !(S.src && S.src.kind === 'image'); lzUI(); cutInfo(); }
+  $('cutOn').checked = S.cutOn; $('cutOff').value = S.cutOff; $('cutTight').value = S.cutTight || 8; $('cutTightOut').textContent = S.cutTight || 8; $('gapMm').value = S.gapMm; $('shortMm').value = S.shortMm; $('sec-trace').hidden = !(S.src && S.src.kind === 'image'); lzUI(); cutInfo(); }
 $('detail').addEventListener('input', e => { S.trace.detail = +e.target.value; $('detailOut').textContent = S.trace.detail; traceSoon(); });
 $('corners').addEventListener('input', e => { S.trace.corners = +e.target.value; $('cornersOut').textContent = S.trace.corners; traceSoon(); });
 function traceModeUI() { const m = S.trace.mode || (S.trace.invert ? 'light' : 'auto'); document.querySelectorAll('[data-tmode]').forEach(b => b.classList.toggle('on', b.dataset.tmode === m)); }
@@ -166,11 +169,17 @@ $('straighten').addEventListener('change', e => { S.trace.straighten = e.target.
 $('retraceBtn').onclick = () => retrace(true);
 $('showPhoto').addEventListener('change', e => { S.showPhoto = e.target.checked; draw(); saveSoon(); });
 const numIn = (id, key, lo, hi, after) => $(id).addEventListener('change', e => { const v = +e.target.value; if (!(v >= lo && v <= hi)) { e.target.value = S[key]; toast(`Use a number from ${lo} to ${hi}`); return; } S[key] = v; if (after) after(); saveSoon(); });
-numIn('widthMm', 'widthMm', 5, 2000, () => { updStats(); exSummary(); }); numIn('lineMm', 'lineMm', 0.05, 5, exSummary); numIn('cutOff', 'cutOff', 0, 50); numIn('gapMm', 'gapMm', 0.1, 20); numIn('shortMm', 'shortMm', 0.1, 100);
+numIn('widthMm', 'widthMm', 5, 2000, () => { updStats(); exSummary(); }); numIn('lineMm', 'lineMm', 0.05, 5, exSummary); numIn('cutOff', 'cutOff', 0, 50); $('cutTight').addEventListener('input', e => { S.cutTight = +e.target.value; $('cutTightOut').textContent = S.cutTight; saveSoon(); }); numIn('gapMm', 'gapMm', 0.1, 20); numIn('shortMm', 'shortMm', 0.1, 100);
 $('cutOn').addEventListener('change', e => { S.cutOn = e.target.checked; cutInfo(); draw(); saveSoon(); exSummary(); });
 $('makeCutBtn').onclick = makeCut;
 $('nameBtn').onclick = () => { const n = prompt('Project name (used in the file names)', S.name); if (n && n.trim()) { S.name = n.trim().slice(0, 40); syncInputs(); saveSoon(); } };
-function openSec(id) { document.querySelectorAll('#panel details[name=acc]').forEach(d => { d.open = d.id === id; }); }
+function openSec(id, show = true) { if (show) openMenu(); document.querySelectorAll('#panel details[name=acc]').forEach(d => { d.open = d.id === id; }); }
+// ☰ Menu: everything that is not a drawing tool lives in a sheet that is closed by default
+function openMenu(id) { document.body.classList.add('menuOpen'); if (id) { document.querySelectorAll('#panel details[name=acc]').forEach(d => { d.open = d.id === id; }); const el = $(id); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 30); } }
+function closeMenu() { document.body.classList.remove('menuOpen'); }
+$('menuBtn').onclick = () => document.body.classList.contains('menuOpen') ? closeMenu() : openMenu(); $('menuClose').onclick = closeMenu; $('menuBack').onclick = closeMenu;
+$('exportTop').onclick = () => openMenu('sec-export');
+$('addShape').onclick = () => { closeMenu(); setTool('shapes'); };
 // ---------- geometry helpers on the whole drawing ----------
 const pkey = (pi, j) => pi + ':' + j, unkey = k => k.split(':').map(Number);
 const same = (a, b) => Math.abs(a.x - b.x) < 1e-3 && Math.abs(a.y - b.y) < 1e-3;
@@ -179,7 +188,8 @@ const isEnd = (p, j) => !p.z && (j === 0 || j === p.n.length - 1);
 function hitNode(u, tolU, only) { let best = null, bd = tolU; const list = only ? [...only] : S.paths.map((_, i) => i);
   for (const pi of list) { const p = S.paths[pi]; if (!p) continue; p.n.forEach((nd, j) => { const d = Math.hypot(nd.x - u[0], nd.y - u[1]); if (d < bd) { bd = d; best = { pi, j }; } }); } return best; }
 function hitHandle(u, tolU) { let best = null, bd = tolU; for (const h of handleList()) { const q = S.paths[h.pi].n[h.j][h.side], d = Math.hypot(q[0] - u[0], q[1] - u[1]); if (d < bd) { bd = d; best = h; } } return best; }
-function hitPath(u, tolU, skipIdx = -1) { let best = null; S.paths.forEach((p, pi) => { if (pi === skipIdx || !p.n.length) return; const bb = BZ.bbox([p]); if (!bb || u[0] < bb.x0 - tolU || u[0] > bb.x1 + tolU || u[1] < bb.y0 - tolU || u[1] > bb.y1 + tolU) return;
+function hitPath(u, tolU, skipIdx = -1) { return hitPathF(u, tolU, skipIdx, p => !p.cut) || hitPathF(u, tolU * 0.6, skipIdx, p => p.cut); }
+function hitPathF(u, tolU, skipIdx, filt) { let best = null; S.paths.forEach((p, pi) => { if (pi === skipIdx || !p.n.length || !filt(p)) return; const bb = BZ.bbox([p]); if (!bb || u[0] < bb.x0 - tolU || u[0] > bb.x1 + tolU || u[1] < bb.y0 - tolU || u[1] > bb.y1 + tolU) return;
     const r = BZ.nearest(p, u, Math.max(0.2, tolU / 6)); if (r && r.d <= tolU && (!best || r.d < best.d)) best = Object.assign(r, { pi }); }); return best; }
 const tolPx = e => (e && e.pointerType === 'mouse' ? 9 : 16) / view.s;
 // merge in-line straight pieces, but never remove a point where another line meets this one
@@ -317,9 +327,9 @@ function penDrag(g, u) { const p = S.paths[pen.pi], nd = p.n[g.j], dx = u[0] - n
 function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.length < 2) S.paths.splice(pen.pi, 1); pen = null; changed(); }
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
-function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); tool = t; document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); draw(); }
-document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool));
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
 $('delWhole').onclick = () => { delMode = 'whole'; $('delWhole').classList.add('on'); $('delStretch').classList.remove('on'); $('delTip').textContent = 'Tap a line: the whole line is removed.'; };
 const ACT = { nCorner: () => nodeType(false), nSmooth: () => nodeType(true), nLine: () => segType(true), nCurve: () => segType(false), nAdd: addNode, nDel: delNodes, nBreak: () => { if (!sel.size && act.size === 1) { const pi = [...act][0]; setTool('line'); T2.startBreak(pi); return; } breakNodes(); }, nJoin: joinNodes, nSeg: delSegs, nStraight: straighten, nAll: selectLine, nCut: toggleCut };
@@ -340,6 +350,7 @@ cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => 
 cv.addEventListener('wheel', e => { e.preventDefault(); const p = cvPt(e), k = Math.exp(-e.deltaY * 0.0015), ns = Math.max(0.05, Math.min(80, view.s * k)), kk = ns / view.s; view.tx = p[0] - (p[0] - view.tx) * kk; view.ty = p[1] - (p[1] - view.ty) * kk; view.s = ns; draw(); }, { passive: false });
 function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap: null };
   if ((tool === 'line' || tool === 'shapes') && window.T2) return T2.down(e, p, u, base);
+  if (window.T4 && T4.IDS.includes(tool)) return T4.down(e, p, u, base); // a tool is on: one finger never moves the picture
   if (tool === 'move' || !S.paths.length && tool !== 'pen') return Object.assign(base, { kind: 'pan', tx: view.tx, ty: view.ty });
   if (tool === 'pen') { const g = penDown(u, e); return g ? Object.assign(base, g) : null; }
   if (tool === 'erase' || tool === 'skip') return Object.assign(base, { kind: 'tap', tx: view.tx, ty: view.ty });
@@ -353,6 +364,7 @@ function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap
   return Object.assign(base, { kind: 'box', h: sh }); }
 function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.hypot(p[0] - g.p0[0], p[1] - g.p0[1]) < (e.pointerType === 'mouse' ? 3 : 7)) return; g.moved = true;
   if (g.t2) { T2.move(g, p, u, e); return; }
+  if (g.t4) { T4.move(g, p, u, e); return; }
   if (g.kind === 'pan') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
   if (g.kind === 'tap') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
   if (g.kind === 'pen') { penDrag(g, u); return; }
@@ -363,6 +375,7 @@ function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.
   if (g.kind === 'box') { overlay = { box: [g.u0, u] }; draw(); } }
 function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
   if (g.t2) { T2.up(g, e); return; }
+  if (g.t4) { T4.up(g, e); return; }
   if (g.kind === 'pan') return;
   if (g.kind === 'tap') { if (!g.moved) { if (tool === 'erase') { const h = hitPath(g.u0, tolPx(e)); if (h) deleteStretch(h); else toast('Tap right on a line to delete it'); } else skipTap(g.u0, e); } return; }
   if (g.kind === 'pen') { if (g.moved) { saveSoon(); updStats(); } return; }
@@ -375,11 +388,12 @@ function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
     lastTapT = now; lastTapU = g.u0; overlay = { pt: g.h.pt }; updSel(); draw(); setTimeout(() => { if (overlay && overlay.pt) { overlay = null; draw(); } }, 900); return; }
   if (g.kind === 'box') { if (!g.moved) { if (g.h) { act = new Set([g.h.pi]); sel.clear(); lastTap = { pi: g.h.pi, k: g.h.k, t: g.h.t }; lastTapT = Date.now(); lastTapU = g.u0; } else clearSel(); updSel(); draw(); return; } const a = g.u0, b = toU(...cvPt(e)), x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
     sel.clear(); act.clear(); S.paths.forEach((p, pi) => p.n.forEach((nd, j) => { if (nd.x >= x0 && nd.x <= x1 && nd.y >= y0 && nd.y <= y1) { sel.add(pkey(pi, j)); act.add(pi); } })); lastTap = null; updSel(); draw(); } }
-function cancelGesture() { if (!gest) return; if (gest.restore && gest.moved) gest.restore(); if (gest.snap && gest.moved) { S.paths = gest.snap; } if (gest.kind === 'pan' || gest.kind === 'tap' || gest.t2 === 'pan' || gest.t2 === 'tap') { view.tx = gest.tx; view.ty = gest.ty; } gest = null; overlay = null; draw(); }
+function cancelGesture() { if (!gest) return; if (gest.t4 && window.T4) T4.cancelG(gest); if (gest.restore && gest.moved) gest.restore(); if (gest.snap && gest.moved) { S.paths = gest.snap; } if (gest.kind === 'pan' || gest.kind === 'tap' || gest.t2 === 'pan' || gest.t2 === 'tap') { view.tx = gest.tx; view.ty = gest.ty; } gest = null; overlay = null; draw(); }
 window.addEventListener('keydown', e => { if (/input|select|textarea/i.test((e.target.tagName || ''))) return; const z = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
   if (z && !e.shiftKey) { e.preventDefault(); undo(); return; } if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (z && e.shiftKey))) { e.preventDefault(); redo(); return; }
   if (tool === 'pen' && (e.key === 'Enter' || e.key === 'Escape')) { penDone(); return; }
   if ((tool === 'line' || tool === 'shapes') && e.key === 'Escape' && window.T2) { T2.cancel(); draw(); return; }
+  if (tool === 'p2p' && (e.key === 'Enter' || e.key === 'Escape') && window.T4) { T4.p2pDone(); return; }
   if (tool !== 'nodes') return; const st = (+$('nudgeMm').value || 0.5) * (e.shiftKey ? 5 : 1), A = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
   if (A && sel.size) { e.preventDefault(); nudge(A[0] * st, A[1] * st); } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel.size) { e.preventDefault(); delNodes(); } });
 $('undoBtn').onclick = undo; $('redoBtn').onclick = redo; $('fitBtn').onclick = fit;
@@ -456,7 +470,7 @@ function saveSoon() { clearTimeout(saveT); saveT = setTimeout(saveNow, 600); }
 async function saveNow() { if (!S.src && !S.paths.length) return; S.saved = Date.now(); try { await DB.put('last', JSON.parse(JSON.stringify(S))); $('saveInfo').textContent = 'Saved on this device ' + new Date(S.saved).toLocaleTimeString(); } catch (e) { $('saveInfo').textContent = 'Could not save on this device: ' + e.message; } }
 // v1/v2 projects stored plain point lists: turn them into Bezier paths
 function migrate(v) { if (Array.isArray(v.paths) && v.paths.length && Array.isArray(v.paths[0])) v.paths = v.paths.filter(p => p.length > 1).map(p => BZ.fromPolyline(p, { tol: 0.6, arm: 4, corner: 35, closed: p.length > 3 && Math.hypot(p[0][0] - p[p.length - 1][0], p[0][1] - p[p.length - 1][1]) < 0.01 })).filter(Boolean);
-  const ot = v.trace || {}; v.trace = Object.assign(DEFAULTS().trace, ot); if (!ot.mode) v.trace.mode = ot.invert ? 'light' : 'auto'; delete v.trace.invert; v.sheet = Object.assign(SHEET0(), v.sheet || {}); if (v.ver !== 3) { v.cutOn = false; v.ver = 3; } return v; }
+  const ot = v.trace || {}; v.trace = Object.assign(DEFAULTS().trace, ot); if (!ot.mode) v.trace.mode = ot.invert ? 'light' : 'auto'; delete v.trace.invert; v.sheet = Object.assign(SHEET0(), v.sheet || {}); if (v.ver !== 3) { v.cutOn = false; v.ver = 3; } if (!v.v4) { if (v.cutOff == null || v.cutOff === 3) v.cutOff = 0.5; v.cutTight = v.cutTight || 8; v.showPhoto = false; v.v4 = 1; } return v; }
 async function resume() { const v = await DB.get('last'); if (!v) return false; S = Object.assign(DEFAULTS(), migrate(v)); undoSt = []; redoSt = []; srcImg = srcEl = null; clearSel(); pen = null;
   if (S.src && S.src.kind === 'image' && S.src.url) await setSource(S.src.url); $('srcInfo').textContent = S.src ? (S.src.kind === 'svg' ? 'Imported SVG.' : `Picture ${S.src.w} × ${S.src.h} px.`) : 'No picture yet.';
   syncInputs(); enterApp(); changed(); fit(); return true; }
@@ -468,18 +482,15 @@ $('homeBtn').onclick = showHome;
 $('newBtn').onclick = async () => { await saveNow(); $('panelFile').click(); };
 // ---------- help ----------
 const HELP = [
-  ['🖼️', 'Open a line drawing', 'Open a PNG or JPG line drawing (like AI line art or a colouring page) or an SVG. Waylands Path traces one clean line down the middle of every drawn line, and puts a <b>grey line</b> round the outside: that is your <b>cut line</b>.'],
-  ['⦿', 'Fix points with Nodes', 'Tap a line to show its points. Drag a point, or drag the middle of a line to bend it. Pick a point to get its curve handles. Buttons: <b>Sharp / Smooth</b>, <b>Straight / Curve</b>, <b>+ Point / − Point</b>, <b>Break / Join</b>, <b>Delete piece</b>. Double-tap a line to add a point.'],
-  ['✒️', 'Pen and Delete', '<b>Pen</b>: tap for sharp points, press and drag for curves, tap the first point to close, then <b>Done</b>. <b>Delete</b>: tap a line and it goes, up to the junction each side.'],
-  ['<svg viewBox="0 0 24 24" width="44" height="44"><path d="M3 19 L9 13 M13 9 L21 3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M9 13 L13 9" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.5 2" fill="none"/></svg>', 'Line with breaks', '<b>Line</b>: tap where the line starts, then where it ends. Keep it <b>Straight</b>, or tap <b>Arch</b> and drag the round handle to bend it. <b>Next</b>, then tap two points on the line for each break (tap more pairs for more breaks) and <b>Confirm</b>. To break a line you already have, pick it with <b>Nodes</b> and press <b>Break</b> (or Line › <b>Break a line</b>). The laser is off across every break.'],
-  ['⬡', 'Shapes', '<b>Shapes</b>: pick a circle, triangle, square, more sides or a star, then press and drag on the design. Drag the square handles to stretch, the green ↻ handle to turn, the middle to move. Tick <b>Cut-off line</b> for a flat side (Flat bottom / top / left / right, or drag the red dots). <b>Done</b> makes it a normal line you can fine-tune with Nodes.'],
-  ['✂', 'Cut lines', 'The <b>grey line</b> round the outside is the cut. Any line can be a cut too: with <b>Nodes</b> tap it (a window, a slot) and tap <b>Make cut</b> - tap again for <b>Make etch</b>. Holes and windows are always cut first, each with all its passes, and the outside last, so nothing drops out early.'],
-  ['🔥', 'Size, sheet and laser', 'Set the <b>Width</b> of the finished piece in mm. To put it on a blank, open <b>Sheet</b>: blank size (200 × 200 mm to start), margin, and how many copies across and down - <b>Fit as many as possible</b> does it for you. Then <b>Share</b> or <b>Save laser zip</b>. Engraving burns first, then the cut. Every jump between lines is laser-off. With Sheet on, put the laser at the blank\'s bottom-left corner.']];
+  ['🖼️', 'Open a line drawing', 'Open a PNG/JPG line drawing or an SVG. Black lines are what the laser etches; the <b>grey line</b> round the outside is where it cuts the piece out. Pick a tool at the bottom. <b>Two fingers</b> always move and zoom the picture; <b>⤢ Fit</b> re-centres it.'],
+  ['✏️', 'The 7 tools (tap one, tap again to put it away)', '<b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area, tap Cut out - it becomes a hole.<br><b>Clear space</b>: tap points round an area, tap Clear - every line inside goes.'],
+  ['☰', 'Menu and Export', '<b>☰ Menu</b> holds the picture, trace, size, laser, sheet and <b>Add shape</b>. <b>Export</b> (top bar) makes the LaserGRBL files. <b>↶ Undo</b> undoes anything.'],
+];
 let helpI = 0;
 function showHelp(i = 0) { helpI = i; const [ic, t, b] = HELP[i]; $('helpStep').innerHTML = `<div class="stepn">Step ${i + 1} of ${HELP.length}</div><div class="hpic">${ic}</div><h2>${t}</h2><p>${b}</p>`;
   $('helpBack').disabled = !i; $('helpNext').textContent = i === HELP.length - 1 ? 'Done' : 'Next ›'; $('help').hidden = false; }
-function closeHelp() { $('help').hidden = true; try { localStorage.setItem('wp-help3', '1'); } catch (e) { /* */ } }
-function maybeHelp() { if (!localStorage.getItem('wp-help3')) showHelp(0); }
+function closeHelp() { $('help').hidden = true; try { localStorage.setItem('wp-help4', '1'); } catch (e) { /* */ } }
+function maybeHelp() { if (!localStorage.getItem('wp-help4')) showHelp(0); }
 $('helpNext').onclick = () => helpI < HELP.length - 1 ? showHelp(helpI + 1) : closeHelp(); $('helpBack').onclick = () => helpI && showHelp(helpI - 1); $('helpSkip').onclick = closeHelp;
 $('helpBtn').onclick = () => showHelp(0); $('homeHelp').onclick = () => showHelp(0);
 // ---------- install / offline ----------
@@ -487,7 +498,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: any line can be a cut, safe cut order, Sheet with copies, better paper sketches'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: 7 simple tools, eraser, draw, thick and double lines, tighter cut'; $('verOut').textContent = APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
   const had = !!navigator.serviceWorker.controller;
@@ -498,4 +509,4 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEve
 window.addEventListener('resize', () => resize()); new ResizeObserver(() => resize()).observe($('stageWrap'));
 window.addEventListener('pagehide', () => { saveNow(); });
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
-window.WP = { get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };

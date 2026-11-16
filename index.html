@@ -33,6 +33,8 @@
   <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
   <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
   <button id="fitBtn" title="Fit the design on screen" aria-label="Fit view">⤢<span class="tl"> Fit</span></button>
+  <button id="exportTop" class="accent" title="Export laser files">📤<span class="tl2"> Export</span></button>
+  <button id="menuBtn" title="Menu: picture, trace, size, laser, sheet" aria-label="Menu">☰<span class="tl2"> Menu</span></button>
   <button id="installBtn" class="accent" hidden title="Install as an app">⊕<span class="tl"> Install</span></button>
   <button id="helpBtn" title="How it works" aria-label="Help">?</button>
 </header>
@@ -45,15 +47,27 @@
   </section>
   <div id="toolDock">
     <div id="tools" role="toolbar" aria-label="Tools">
-      <button data-tool="move" class="tool on" title="Move and zoom the view">✋<span>Move</span></button>
-      <button data-tool="nodes" class="tool" title="Edit points, like Inkscape's node tool">⦿<span>Nodes</span></button>
-      <button data-tool="line" class="tool" title="Draw a line with breaks, or break a line"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19 L9 13 M13 9 L21 3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="M9 13 L13 9" stroke="currentColor" stroke-width="1.6" stroke-dasharray="1.5 2" fill="none"/></svg><span>Line</span></button>
-      <button data-tool="shapes" class="tool" title="Circles, ellipses and polygons with a cut-off line"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="16.5,4.2 21.0,12.0 16.5,19.8 7.5,19.8 3.0,12.0 7.5,4.2" stroke="currentColor" stroke-width="2.2" fill="none"/></svg><span>Shapes</span></button>
-      <button data-tool="pen" class="tool" title="Draw a new line">✒<span>Pen</span></button>
-      <button data-tool="erase" class="tool" title="Delete a line">⌫<span>Delete</span></button>
+      <button data-tool="p2p" class="tool" title="Tap point to point for straight lines; drag a line to bend it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19 L11 7 L20 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="4" cy="19" r="2.3" fill="currentColor"/><circle cx="11" cy="7" r="2.3" fill="currentColor"/><circle cx="20" cy="15" r="2.3" fill="currentColor"/></svg><span>Point to point</span></button>
+      <button data-tool="draw" class="tool" title="Draw a line with your finger"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18 C6 10, 9 20, 12 13 S18 6, 21 8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Draw</span></button>
+      <button data-tool="brk" class="tool" title="Tap two points: remove the bit between, or add a line across a gap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12 H9 M15 12 H21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 12 H15" stroke="currentColor" stroke-width="1.6" stroke-dasharray="1.6 2" fill="none"/><circle cx="9" cy="12" r="2.2" fill="currentColor"/><circle cx="15" cy="12" r="2.2" fill="currentColor"/></svg><span>Break</span></button>
+      <button data-tool="rub" class="tool" title="Rub lines out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 L20 10 L11 19 H6 L3 16 Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 9 L15 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M12 19 H21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Eraser</span></button>
+      <button data-tool="thick" class="tool" title="Make a line thicker or double"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7 H21" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3 12 H21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M3 18 H21" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg><span>Thickness</span></button>
+      <button data-tool="cutout" class="tool" title="Tap inside an area to cut it out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke="#9aa0a4" stroke-width="2.6" fill="none"/><rect x="8" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.2 1.8" fill="none"/></svg><span>Cut out</span></button>
+      <button data-tool="clear" class="tool" title="Tap points round an area, then clear every line inside"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6 L18 4 L20 17 L7 20 Z" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2" fill="none"/><path d="M9 10 L15 15 M15 10 L9 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Clear space</span></button>
     </div>
     <div id="toolOpts">
-      <div data-opts="move" class="topts">Drag to move · pinch or mouse wheel to zoom. Pick a tool to edit. Two fingers always move the view.</div>
+      <div data-opts="move" class="topts">Pick a tool. With no tool picked, one finger moves the picture. Two fingers always move and zoom.</div>
+      <div data-opts="p2p" class="topts t4p" hidden><div class="t4h" id="t4ppHint"></div><div class="t4b"><button id="t4ppUndo">↶ Undo</button><button id="t4ppDone" class="accent">✓ Done</button></div></div>
+      <div data-opts="draw" class="topts t4p" hidden><div class="t4h">Draw with one finger. The line is smoothed and its ends snap onto nearby lines. Two fingers move the picture.</div><div class="t4b"><button id="t4drUndo" class="big2">↶ Undo</button></div></div>
+      <div data-opts="brk" class="topts t4p" hidden><div class="t4h" id="t4brHint"></div><div class="t4b"><button id="t4brNo">✕ Cancel</button><button id="t4brOk" class="accent">✓ Confirm</button></div></div>
+      <div data-opts="rub" class="topts t4p" hidden><div class="t4h">Rub over lines to erase. Tap a line to remove it up to the next junction.</div>
+        <label class="rg"><span>Brush size</span><input type="range" id="t4rb" min="8" max="70" step="1" value="22"><output id="t4rbOut"></output></label>
+        <div class="t4b"><div class="seg"><button data-rbmode="all" class="on">Everything</button><button data-rbmode="dbl">Doubled lines only</button></div><button id="t4rbUndo" class="big2">↶ Undo</button></div></div>
+      <div data-opts="thick" class="topts t4p" hidden><div class="t4h" id="t4thHint"></div>
+        <label class="rg"><span>Thickness</span><input type="range" id="t4w" min="0.3" max="3" step="0.05" value="0.3"><input type="number" id="t4wn" class="num" inputmode="decimal" min="0" max="10" step="0.05" value="0.3"><span class="u">mm</span></label>
+        <div class="t4b"><label class="chk"><input type="checkbox" id="t4dbl">Double line</label><span id="t4ddRow" class="stepper" hidden><span class="lbl2">Distance between lines</span><button id="t4ddM" aria-label="Less">−</button><input type="number" id="t4dd" class="num" inputmode="decimal" min="0.01" max="20" step="0.01" value="0.50"><button id="t4ddP" aria-label="More">+</button><span class="u">mm</span></span><button id="t4thAll">Apply to all lines</button></div></div>
+      <div data-opts="cutout" class="topts t4p" hidden><div class="t4h" id="t4coHint"></div><div class="t4b"><button id="t4coGo" class="accent big2">✂ Cut out</button><button id="t4coEtch" hidden>Make etch line</button><button id="t4coOut">Outer cut…</button></div></div>
+      <div data-opts="clear" class="topts t4p" hidden><div class="t4h" id="t4clHint"></div><div class="t4b"><button id="t4clNo">✕ Cancel</button><button id="t4clBack">↶ Last point</button><button id="t4clGo" class="danger big2">🧹 Clear</button></div></div>
       <div data-opts="nodes" class="topts nopts" hidden>
         <div class="selinfo" id="selInfo">Tap a line to show its points</div>
         <div class="nbtns">
@@ -117,10 +131,12 @@
       </div>
     </div>
   </div>
+  <div id="menuBack"></div>
   <aside id="panel">
+    <div class="menuhead"><b>☰ Menu</b><button id="addShape">⬡ Add shape</button><button id="menuClose" aria-label="Close menu">✕</button></div>
     <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
       <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
-      <label class="chk"><input type="checkbox" id="showPhoto" checked>Show the picture faintly behind the lines</label>
+      <label class="chk"><input type="checkbox" id="showPhoto">Show the picture faintly behind the lines</label>
       <div class="hint" id="srcInfo">No picture yet.</div>
       <div class="hint">Made for line drawings: AI line art, logos, colouring-page pictures. Photos are not traced.</div>
     </div></details>
@@ -154,10 +170,11 @@
       <div class="hint">Width is the whole finished piece, cut line included. Height follows.</div>
       <label class="chk big"><input type="checkbox" id="cutOn" checked>Cut out along the grey line</label>
       <div class="hint" id="cutInfo"></div>
-      <details class="adv"><summary>Make a new cut line</summary>
-        <div class="row"><label class="grow"><span>Gap round the lines</span><input type="number" id="cutOff" inputmode="decimal" min="0" max="50" step="any" value="3"><span>mm</span></label><button id="makeCutBtn">Make cut line</button></div>
-        <div class="hint">Replaces the grey line with one that goes round all the lines at this gap.</div>
-      </details>
+      <div class="lbl">Outer cut line</div>
+        <div class="row"><label class="grow"><span>Outline gap</span><input type="number" id="cutOff" inputmode="decimal" min="0" max="50" step="any" value="0.5"><span>mm</span></label></div>
+        <label class="rg"><span>Tightness</span><input type="range" id="cutTight" min="1" max="10" step="1" value="8"><output id="cutTightOut">8</output></label>
+        <div class="row"><button id="makeCutBtn" class="grow">↻ Make outer cut line</button></div>
+        <div class="hint">Makes a new grey line round all the lines: <b>Outline gap</b> = how far outside the lines (0–1 mm hugs them). <b>Tightness</b> 10 follows into every pocket, 1 gives a smooth outline. Holes you made are kept. Drag it with the Cut out tool to fine-tune.</div>
     </div></details>
     <details name="acc" id="sec-laser"><summary>5 · Laser steps</summary><div class="body">
       <div class="hint">Tap a step to open it. Power is % of your laser max S, speed in mm/min. Written into each .nc file.</div>
@@ -206,5 +223,6 @@
 <script src="js/laser.js"></script>
 <script src="js/app.js"></script>
 <script src="js/tools2.js"></script>
+<script src="js/tools4.js"></script>
 </body>
 </html>

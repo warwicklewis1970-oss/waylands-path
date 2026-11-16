@@ -36,7 +36,21 @@ const LZ = (() => {
     return out; }
   function travel(polys, start = [0, 0]) { let t = 0, cur = start; for (const p of polys) { t += dd(cur, p[0]); cur = p[p.length - 1]; } return t; }
   // Bezier paths -> polylines in laser mm (y up, 0,0 = bottom-left), curves flattened to 0.02 mm
-  const polysG = (fr, paths) => paths.map(p => toMmG(fr, BZ.flatten(p, 0.02 / fr.k))).filter(p => p.length > 1);
+  // v4 line thickness / double line: a path with p.w (etch width, mm) and/or p.dbl (distance between two lines, mm) is burnt as
+  // parallel offset passes spaced at the laser line width. Paths without them are untouched (one pass on the centre line, as before).
+  function widthOffs(p, lineMm) { const lw = lineMm > 0 ? lineMm : 0.3, W = Math.max(lw, +p.w || 0), D = +p.dbl || 0; if (W <= lw + 1e-9 && !(D > 0)) return null;
+    const n = W > lw + 1e-9 ? Math.ceil((W - lw) / lw - 1e-9) + 1 : 1, step = n > 1 ? (W - lw) / (n - 1) : 0, one = []; for (let i = 0; i < n; i++) one.push(-(W - lw) / 2 + i * step);
+    if (!(D > 0)) return one; const all = one.map(o => o - D / 2).concat(one.map(o => o + D / 2)).sort((a, b) => a - b), out = []; // drop passes that would land on top of each other
+    for (const o of all) if (!out.length || o - out[out.length - 1] >= lw * 0.5 - 1e-9) out.push(o); return out; }
+  function offsetPoly(pts0, d, closed) { const pts = []; for (const q of pts0) if (!pts.length || Math.hypot(q[0] - pts[pts.length - 1][0], q[1] - pts[pts.length - 1][1]) > 1e-9) pts.push(q);
+    if (closed && pts.length > 2 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 1e-9) pts.pop(); const n = pts.length; if (n < 2 || !d) return pts0.map(q => q.slice());
+    const nrm = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [-dy / l, dx / l]; }, out = [];
+    for (let i = 0; i < n; i++) { const hasP = closed || i > 0, hasN = closed || i < n - 1, nP = hasP ? nrm(pts[(i - 1 + n) % n], pts[i]) : null, nN = hasN ? nrm(pts[i], pts[(i + 1) % n]) : null;
+      let v = nP && nN ? [nP[0] + nN[0], nP[1] + nN[1]] : (nP || nN), l = Math.hypot(v[0], v[1]); if (l < 1e-9) v = nN || nP, l = 1;
+      v = [v[0] / l, v[1] / l]; const c = nN ? v[0] * nN[0] + v[1] * nN[1] : 1, m = Math.min(1 / Math.max(c, 1e-6), 3); out.push([pts[i][0] + v[0] * d * m, pts[i][1] + v[1] * d * m]); }
+    if (closed) out.push(out[0].slice()); return out; }
+  const expand = (p, base, lineMm) => { const offs = widthOffs(p, lineMm); return offs ? offs.map(o => offsetPoly(base, o, !!p.z)) : [base]; };
+  const polysG = (fr, paths) => [].concat(...paths.map(p => expand(p, toMmG(fr, BZ.flatten(p, 0.02 / fr.k)), fr.lineMm))).filter(p => p.length > 1);
   // ---- sheet layout: where each copy of the design sits, in laser mm (y up). No sheet = one copy at 0,0, area = the design. ----
   function layout(fr, sh) { if (!sh || !sh.on) return { on: false, offs: [[0, 0]], ax0: 0, ay0: 0, ax1: fr.W, ay1: fr.H, W: fr.W, H: fr.H, n: 1, fits: true };
     const W = +sh.W, H = +sh.H, m = Math.max(0, +sh.margin || 0), gap = Math.max(0, +sh.gap || 0), dw = fr.W, dh = fr.H;
@@ -91,7 +105,7 @@ const LZ = (() => {
     const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, pw, ph);
     c.strokeStyle = '#000'; c.lineWidth = Math.max(1, lineMm * pxmm); c.lineCap = c.lineJoin = 'round'; c.beginPath();
     for (const o of lay.offs) { const X = (o[0] - lay.ax0) * pxmm, Y = (lay.ay1 - (o[1] + fr.H)) * pxmm;
-      for (const p0 of paths) { const q = toMmSvg(fr, BZ.flatten(p0, 0.05 / fr.k)); c.moveTo(X + q[0][0] * pxmm, Y + q[0][1] * pxmm); for (let i = 1; i < q.length; i++) c.lineTo(X + q[i][0] * pxmm, Y + q[i][1] * pxmm); if (q.length === 1) c.lineTo(X + q[0][0] * pxmm + 0.01, Y + q[0][1] * pxmm); } }
+      for (const p0 of paths) for (const q of expand(p0, toMmSvg(fr, BZ.flatten(p0, 0.05 / fr.k)), lineMm)) { c.moveTo(X + q[0][0] * pxmm, Y + q[0][1] * pxmm); for (let i = 1; i < q.length; i++) c.lineTo(X + q[i][0] * pxmm, Y + q[i][1] * pxmm); if (q.length === 1) c.lineTo(X + q[0][0] * pxmm + 0.01, Y + q[0][1] * pxmm); } }
     c.stroke(); return { d: c.getImageData(0, 0, pw, ph).data, pw, ph }; }
   function dither(d, pw, ph) { const g = new Float32Array(pw * ph); for (let i = 0; i < g.length; i++) g[i] = d[i * 4];
     for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) { const i = y * pw + x, o = g[i], nv = o < 128 ? 0 : 255, e = o - nv; g[i] = nv;
@@ -117,7 +131,7 @@ const LZ = (() => {
     let d = 'M' + m([n[0].x, n[0].y]); for (let k = 0; k < BZ.nseg(p); k++) { const s = BZ.seg(p, k); d += s.line ? 'L' + m(s.C[3]) : 'C' + m(s.C[1]) + ' ' + m(s.C[2]) + ' ' + m(s.C[3]); } return d + (p.z ? 'Z' : ''); };
   // SVG in true mm: width/height in mm, viewBox 0 0 W H, so LaserGRBL and Inkscape read it 1:1
   function svg(fr, groups, title, lay) { lay = lay || layout(fr, null); const W = f2(lay.on ? lay.W : fr.W), H = f2(lay.on ? lay.H : fr.H);
-    const body = g => g.paths.map(p => `<path d="${dStr(fr, p)}"/>`).join('\n'), copies = g => lay.on ? lay.offs.map(o => `<g transform="translate(${R3(o[0])} ${R3(lay.H - o[1] - fr.H)})">\n${body(g)}\n</g>`).join('\n') : body(g);
+    const body = g => g.paths.map(p => widthOffs(p, fr.lineMm) ? expand(p, toMmSvg(fr, BZ.flatten(p, 0.02 / fr.k)), fr.lineMm).map(q => `<path d="M${q.map(v => R3(v[0]) + ' ' + R3(v[1])).join('L')}"/>`).join('\n') : `<path d="${dStr(fr, p)}"/>`).join('\n'), copies = g => lay.on ? lay.offs.map(o => `<g transform="translate(${R3(o[0])} ${R3(lay.H - o[1] - fr.H)})">\n${body(g)}\n</g>`).join('\n') : body(g);
     return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">\n<title>${esc(title)}</title>\n` +
       groups.map(g => `<g id="${g.id}" fill="none" stroke="${g.color}" stroke-width="${f2(g.width)}" stroke-linecap="round" stroke-linejoin="round">\n${copies(g)}\n</g>`).join('\n') + '\n</svg>\n'; }
   const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -136,7 +150,7 @@ const LZ = (() => {
     return new Blob([...parts, ...cen, e.buffer], { type: 'application/zip' }); }
   const tag = b => `${TAG[b.mode]} P${b.P} F${b.F}${b.passes > 1 ? ` x${b.passes}` : ''}`;
   // all files for one export
-  function build(o) { const { name, art, cut, widthMm, burn, smax, lineMm, pxmm } = o, fr = frame(art, cut, widthMm); if (!fr) throw new Error('Nothing to export yet - open a picture first.');
+  function build(o) { const { name, art, cut, widthMm, burn, smax, lineMm, pxmm } = o, fr = frame(art, cut, widthMm); if (!fr) throw new Error('Nothing to export yet - open a picture first.'); fr.lineMm = lineMm;
     const lay = layout(fr, o.sheet); if (lay.on && !lay.fits) throw new Error(`The ${lay.nx} x ${lay.ny} copies (${f2(lay.bw)} x ${f2(lay.bh)} mm) do not fit inside the margin of the ${f2(lay.W)} x ${f2(lay.H)} mm blank. Use fewer copies, a smaller width, or tap Fit as many as possible.`);
     const base = (String(name || 'Waylands Path').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Waylands Path').slice(0, 40), size = lay.on ? `${lay.n}x on ${Math.round(lay.W)}x${Math.round(lay.H)}mm` : `${Math.round(fr.W)}x${Math.round(fr.H)}mm`;
     const steps = [{ key: 'engrave', label: 'Engrave lines', paths: art }]; if (cut && cut.length) steps.push({ key: 'cut', label: 'Cut outside', paths: cut });
@@ -155,10 +169,11 @@ const LZ = (() => {
       `Design area: ${f2(fr.W)} x ${f2(fr.H)} mm. Laser 0,0 = bottom-left corner of the design area.`, '',
     'IN LASERGRBL (Windows): unzip first (right-click the zip > Extract All > Extract).', 'Every .nc file lines up by itself - same 0,0, same design area. Nothing to size or offset.', ''];
     steps.forEach(s => { L.push(`STEP ${s.n}: ${s.label.toUpperCase()}`, `  File: ${s.file}`, `  ${({ vec: 'Vector', ltl: 'Line To Line', dith: 'Dithering' })[s.b.mode]}, power ${s.b.P}% (S${Math.round(smax * s.b.P / 100)} of ${smax}), speed ${s.b.F} mm/min, ${s.b.passes} pass${s.b.passes > 1 ? 'es' : ''}.`,
+      ...(s.key === 'engrave' && s.paths.some(p => widthOffs(p, fr.lineMm)) ? (() => { const t = s.paths.filter(p => widthOffs(p, fr.lineMm)); return [`  Thick / double lines: ${t.length} line${t.length > 1 ? 's are' : ' is'} burnt as ${[...new Set(t.map(p => widthOffs(p, fr.lineMm).length))].sort((a, b) => a - b).join(' or ')} side-by-side passes ${f2(fr.lineMm)} mm apart (set in the Thickness tool). All other lines: one pass as usual.`]; })() : []),
       ...(s.key === 'cut' && s.b.mode === 'vec' ? [`  Order: inner cuts (holes, windows, slots) first, outer outline last${s.b.order !== 'pass' ? ' - each line gets all its passes before the next' : ''}, so nothing drops out early.`] : []),
       `  LaserGRBL: File > Open File > pick it > Start. Power and speed are written into the file.`, `  To adjust on the machine, use the S [1.00x] (power) and G1 [1.00x] (speed) buttons in LaserGRBL's bottom bar.`, ''); });
     if (steps.length > 1) L.push('Burn step 1 first, then step 2 (the cut) without moving the material or the laser origin.', '');
     L.push(`Also included: ${svgName} (all lines in mm, cut in red) and one SVG per step, for Inkscape or LaserGRBL's SVG import.`, 'Made with Waylands Path.');
     return L.join('\r\n') + '\r\n'; }
-  return { chainPolys, orderPolys, travel, polysG, layout, fitCount, cutOrder, cutDepths, cutG, MODES, TAG, DEF, frame, vecG, rasterG, svg, makeZip, crc32, build, tag, toMmSvg, toMmG };
+  return { widthOffs, offsetPoly, chainPolys, orderPolys, travel, polysG, layout, fitCount, cutOrder, cutDepths, cutG, MODES, TAG, DEF, frame, vecG, rasterG, svg, makeZip, crc32, build, tag, toMmSvg, toMmG };
 })();
