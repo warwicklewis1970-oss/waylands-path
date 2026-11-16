@@ -10,7 +10,7 @@ Sister app to [Wayland Forge](https://warwicklewis1970-oss.github.io/wayland-for
 4. **Tidy** – close small gaps, remove doubled-up lines, remove stray bits. Undo / Redo, pinch zoom.
 5. **Size & cut** – width in mm of the whole piece (cut line included), line width, cut out along the grey line.
 6. **Laser steps** – Engrave lines (Vector, 25 %, F3000) then Cut outside (Vector, 100 %, F1000, 3 passes). Etch first, cut last, same 0,0. Every move between strokes is laser off (`M5`, `G0 … S0`, `M4 S0`); strokes are chained and ordered to keep travel short.
-7. **Export** – a Windows-ready zip with one `.nc` per step, an SVG in mm (true curves), one SVG per step and a read-me.
+7. **Export** – (v4.5) tapping Export opens the **Burn settings** sheet, the same layout and wording as Wayland Forge: *Step 1 – Etch lines* and *Step 2 – Cut out*, each with Mode, Power %, Speed and Passes (cut also keeps *Pass order*), a speed check, and *More laser settings* (Laser max S, Blank & copies…, Reset to defaults). Choose *Save as* (one .zip / separate files / Share / SVG only) and tap Export. The files are unchanged from v4.4: a Windows-ready zip with one `.nc` per step, an SVG in mm (true curves), one SVG per step and a read-me.
 
 Your last project is kept on the device (IndexedDB).
 
@@ -38,6 +38,10 @@ Your last project is kept on the device (IndexedDB).
 - Cut outs are kept when the picture is traced again (they were lost before), and saved when the app goes to the background.
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
+
+## v4.5 – Export opens Burn settings (like Wayland Forge)
+
+Export now opens the Burn settings sheet before saving. The laser files are byte-for-byte the same as v4.4 for the same settings (checked on defaults, custom power/speed/passes with a 2-copy blank, and Line To Line etch). Defaults are unchanged: etch Vector 25% at 3000 mm/min, cut Vector 100% at 1000 mm/min, 3 passes, holes first.
 
 ## v4.4 – My projects + Google Drive sync
 - **My projects** on the home screen: every design is saved on the device as you work, by name, with date and size. Tap to open, ✎ to rename, 🗑 to delete. The project from v4.3 is added to the list automatically.

@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4.4';
+const APP_VERSION = 'v4.5';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -33,26 +33,27 @@ function resetBurn() { for (const k of ['engrave', 'cut']) BURN[k] = Object.assi
 const burnOf = k => { const j = BURN[k], d = LZ.DEF[k], P = +j.P, F = +j.F;
   return { mode: LZ.TAG[j.mode] ? j.mode : d.mode, P: P > 0 ? Math.min(100, Math.max(0.1, Math.round(P * 10) / 10)) : d.P, F: F > 0 ? Math.round(F * 10) / 10 : d.F, passes: Math.min(10, Math.max(1, Math.round(+j.passes || 1))), order: j.order === 'pass' ? 'pass' : 'line' }; };
 const smax = () => { const v = +$('smax').value; return v > 0 ? v : 1000; };
-const STEP_NAME = { engrave: 'Engrave lines', cut: 'Cut outside' }, lzOpen = new Set();
+const STEP_NAME = { engrave: 'Etch lines', cut: 'Cut out' }, lzOpen = new Set();
 const cutActive = () => S.cutOn && cuts().length > 0;
 function lzUI() { const keys = cutActive() ? ['engrave', 'cut'] : ['engrave'];
   $('lzSteps').innerHTML = keys.map((k, i) => { const b = burnOf(k);
-    return `<details class="lzacc" data-acc="${k}"${lzOpen.has(k) ? ' open' : ''}><summary><span>Step ${i + 1} – ${STEP_NAME[k]}</span><span class="lzsum" data-sum="${k}">${sumOf(k)}</span></summary><div class="lzcb">
+    return `<details class="lzacc" data-acc="${k}"${lzOpen.has(k) ? ' open' : ''}><summary><span class="lzst">Step ${i + 1} – ${STEP_NAME[k]}</span> <span class="lzsum" data-sum="${k}">· ${sumOf(k)}</span></summary><div class="lzcb">
       <label class="full">Mode <select data-bj="${k}" data-bf="mode">${LZ.MODES.map(([v, t]) => `<option value="${v}"${b.mode === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <label>Power % <input type="number" inputmode="decimal" min="0.1" max="100" step="any" data-bj="${k}" data-bf="P" value="${b.P}"></label>
       <label>Speed <input type="number" inputmode="decimal" min="1" step="any" data-bj="${k}" data-bf="F" value="${b.F}"></label>
-      <label>Passes <input type="number" inputmode="numeric" min="1" max="10" step="1" data-bj="${k}" data-bf="passes" value="${b.passes}"></label>${k === 'cut' ? `
+      <label>Passes <input type="number" inputmode="numeric" min="1" max="10" step="1" data-bj="${k}" data-bf="passes" value="${b.passes}"></label><div class="lzflag full" data-flag="${k}">${lzFwarn(b.F)}</div>${k === 'cut' ? `
       <label class="full">Pass order <select data-bj="cut" data-bf="order"><option value="line"${b.order !== 'pass' ? ' selected' : ''}>Passes per line (safer)</option><option value="pass"${b.order === 'pass' ? ' selected' : ''}>All lines each pass</option></select></label>` : ''}
       <label class="full"><span class="hint">${k === 'cut' ? 'Vector cuts holes and windows first (deepest first), the outside outline last, so nothing drops out early. Line To Line / Dithering scan row by row instead (no order).' : 'Vector follows each line once, laser off between lines. Line To Line / Dithering scan the lines row by row at the line width.'}</span></label></div></details>`; }).join('');
   exSummary(); }
-const sumOf = k => { const b = burnOf(k); return `${LZ.TAG[b.mode]} ${b.P}% · ${b.F}${b.passes > 1 ? ` · ×${b.passes}` : ''}`; };
+const sumOf = k => { const b = burnOf(k); return `${LZ.TAG[b.mode]} ${b.P}% ${b.F}${b.passes > 1 || k === 'cut' ? ` ×${b.passes}` : ''}`; }; // same style as Wayland Forge: VEC 25% 3000, VEC 100% 1000 ×3
+const lzFwarn = F => F < 100 || F > 20000 ? ' <span class="lzunt">speed outside 100–20000 – check</span>' : '';
 $('lzSteps').addEventListener('change', e => { const k = e.target.dataset.bj, f = e.target.dataset.bf; if (!k || !f) return;
   if (f === 'mode' || f === 'order') BURN[k][f] = e.target.value; else { const v = +e.target.value; if (!(v > 0)) { e.target.value = burnOf(k)[f]; return; } BURN[k][f] = v; e.target.value = burnOf(k)[f]; }
   try { localStorage.setItem(BURN_KEY, JSON.stringify(BURN)); } catch (er) { /* */ }
-  document.querySelectorAll(`[data-sum="${k}"]`).forEach(x => { x.textContent = sumOf(k); }); exSummary(); });
+  document.querySelectorAll(`[data-sum="${k}"]`).forEach(x => { x.textContent = '· ' + sumOf(k); }); document.querySelectorAll(`[data-flag="${k}"]`).forEach(x => { x.innerHTML = lzFwarn(burnOf(k).F); }); exSummary(); });
 $('lzSteps').addEventListener('toggle', e => { const d = e.target; if (!d.dataset || !d.dataset.acc) return; if (d.open) lzOpen.add(d.dataset.acc); else lzOpen.delete(d.dataset.acc); }, true);
 $('burnReset').onclick = resetBurn;
-$('smax').value = localStorage.getItem('wp-smax') || 1000; $('smax').addEventListener('change', () => { localStorage.setItem('wp-smax', smax()); exSummary(); });
+$('smax').value = localStorage.getItem('wp-smax') || 1000; $('smax').addEventListener('change', () => { localStorage.setItem('wp-smax', smax()); exSummary(); if (typeof lzWhat === 'function') lzWhat(); });
 // ---------- view / drawing ----------
 function resize() { const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; cv.width = Math.max(1, Math.round(r.width * d)); cv.height = Math.max(1, Math.round(r.height * d)); const ik = $('ink'); if (ik) { ik.width = cv.width; ik.height = cv.height; } draw(); }
 function fit() { const r = cv.getBoundingClientRect(), pad = 16; let bb = S.src && S.src.w ? { x0: 0, y0: 0, x1: S.src.w, y1: S.src.h } : null; const pb = bbAll();
@@ -182,7 +183,6 @@ function openSec(id, show = true) { if (show) openMenu(); document.querySelector
 function openMenu(id) { document.body.classList.add('menuOpen'); if (id) { document.querySelectorAll('#panel details[name=acc]').forEach(d => { d.open = d.id === id; }); const el = $(id); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 30); } }
 function closeMenu() { document.body.classList.remove('menuOpen'); }
 $('menuBtn').onclick = () => document.body.classList.contains('menuOpen') ? closeMenu() : openMenu(); $('menuClose').onclick = closeMenu; $('menuBack').onclick = closeMenu;
-$('exportTop').onclick = () => openMenu('sec-export');
 $('addShape').onclick = () => { closeMenu(); setTool('shapes'); };
 // ---------- geometry helpers on the whole drawing ----------
 const pkey = (pi, j) => pi + ':' + j, unkey = k => k.split(':').map(Number);
@@ -479,6 +479,20 @@ async function saveZip() { let o; try { o = buildOut(); } catch (e) { toast(e.me
   download(blob, o.zipName); listFiles(o, `${o.zipName} is in your Downloads folder. Right-click › Extract All, then open the .nc files in LaserGRBL. Inside:`); }
 function saveSvg() { let o; try { o = buildOut(); } catch (e) { toast(e.message); return; } download(new Blob([o.svgAll], { type: 'image/svg+xml' }), o.svgName); $('exOut').innerHTML = `<div class="ok">${esc(o.svgName)} saved to Downloads (${f1(o.fr.W)} × ${f1(o.fr.H)} mm).</div>`; }
 $('shareBtn').onclick = shareFiles; $('saveZipBtn').onclick = saveZip; $('svgBtn').onclick = saveSvg;
+// v4.5 Export = the Burn settings sheet, like Wayland Forge: one section per step (Mode / Power / Speed / Passes), then Export
+async function saveSeparate() { let o; try { o = buildOut(); } catch (e) { toast(e.message); return; } for (const f of o.files) { download(new Blob([f.data], { type: mimeOf(f.name) }), f.name); await new Promise(r => setTimeout(r, 900)); }
+  listFiles(o, `${o.files.length} files saved to your Downloads folder. If the browser asks to allow multiple downloads, tap Allow.`); }
+function lzWhat() { const el = $('lzWhat'); if (!el) return; if (!etch().length) { el.textContent = 'Open a picture first.'; return; } const k = kmm(), b = bbAll(), sh = S.sheet && S.sheet.on ? (() => { const fr = designFrame(); return fr ? LZ.layout(fr, S.sheet) : null; })() : null;
+  el.innerHTML = `<b>${esc(S.name || 'Untitled')}</b> · ${f1(S.widthMm)} × ${f1(b.h * k)} mm${sh ? ` · ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'} on a ${f1(sh.W)} × ${f1(sh.H)} mm blank` : ''} · ${cutActive() ? `${cuts().length} cut line${cuts().length > 1 ? 's' : ''}` : 'no cut'}`;
+  $('lzSheetInfo').innerHTML = sh ? `Blank on: ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'}, 0,0 = the blank's bottom-left corner.${sh.fits ? '' : ' <span class="warn">They don\'t fit.</span>'}` : 'Blank off: the laser 0,0 is the bottom-left corner of the design.';
+  $('lzMoreSum').textContent = `· S max ${smax()}${sh ? ` · blank ${sh.n}×` : ''}`; }
+function lzOpenBurn() { if (!etch().length) { toast('Open a picture first'); return; } closeMenu(); lzUI(); lzWhat(); const d = $('lzDlg'); if (d.showModal) { if (!d.open) d.showModal(); } else d.setAttribute('open', ''); }
+$('exportTop').onclick = lzOpenBurn; $('lzOpenMenu').onclick = lzOpenBurn;
+$('lzDlgCancel').onclick = () => $('lzDlg').close();
+$('lzSheetBtn').onclick = () => { $('lzDlg').close(); openMenu('sec-sheet'); };
+{ const h = $('lzHow'); try { const v = localStorage.getItem('wp-lzhow'); if (v && [...h.options].some(o => o.value === v)) h.value = v; } catch (e) { /* */ } h.onchange = () => { try { localStorage.setItem('wp-lzhow', h.value); } catch (e) { /* */ } }; }
+$('lzDlgGo').onclick = async () => { $('lzDlg').close(); const how = $('lzHow').value; try { if (how === 'share') await shareFiles(); else if (how === 'files') await saveSeparate(); else if (how === 'svg') saveSvg(); else await saveZip(); } catch (e) { console.warn(e); toast('Export failed: ' + e.message, 4000); return; }
+  const ok = $('exOut').querySelector('.ok'); if (ok) toast(ok.textContent, 6000); };
 // ---------- save / resume (IndexedDB) ----------
 const DB = { db: null, open() { return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open('waylands-path', 1); r.onupgradeneeded = () => r.result.createObjectStore('p'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
   async put(k, v) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('p', 'readwrite'); t.objectStore('p').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); },
@@ -517,7 +531,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: My projects + sync between your phone and tablet with Google'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Export opens Burn settings (power, speed, passes) like Wayland Forge'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;

@@ -164,3 +164,16 @@ body.home #home{place-items:start center;overflow-y:auto}
 .gbtn{background:#fff;color:#1f1f1f;font-weight:600;border:0}.gG{font-weight:800;color:#4285f4;margin-right:4px}
 .prow{display:flex;gap:6px;margin-bottom:8px}.popen{flex:1;text-align:left;min-height:56px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px}
 .popen b{font-size:16px}.popen small{font-size:12px;color:var(--dim)}.pico{width:48px;min-height:56px;font-size:18px}.pnone{color:var(--dim);font-size:14px;padding:6px 2px}
+
+/* v4.5 Burn settings sheet (same layout as Wayland Forge) */
+.lzdlg{width:min(560px,96vw);max-height:92vh;overflow:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:14px}.lzdlg::backdrop{background:#0008}
+.lzdlg h3{margin:0 0 6px;font-size:20px;color:var(--acc)}
+.lzdlg .lzacc{background:#ffffff08}.lzdlg .lzacc>summary{min-height:48px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;font-size:16px;list-style:none;cursor:pointer}
+.lzdlg .lzacc>summary::-webkit-details-marker{display:none}.lzdlg .lzacc>summary::after{margin-left:auto;font-size:18px;padding-left:8px}
+.lzdlg .lzacc[open]>summary{border-bottom:1px solid var(--line)}.lzst{font-weight:700}.lzdlg .lzsum{margin-left:0;font-size:15px;color:var(--dim)}
+.lzdlg .lzcb{padding:8px 12px 12px;gap:10px}.lzdlg .lzcb input,.lzdlg .lzcb select{min-height:44px;font-size:16px}
+.lzunt{background:#ffe9a8;color:#7a4b00;border-radius:4px;padding:0 4px;font-size:12px}.lzrow{display:flex;gap:8px}.lzrow button{flex:1;min-height:44px}
+.lzhow{display:flex;flex-direction:column;gap:4px;margin:10px 0 4px;font-size:14px}.lzhow select{min-height:44px;font-size:16px}
+.lzbbtn{display:flex;gap:8px;justify-content:flex-end;margin:10px -14px -14px;padding:10px 14px;position:sticky;bottom:-14px;background:var(--panel);border-top:1px solid var(--line)}.lzbbtn button{min-height:48px;padding:0 22px;font-size:17px}
+.lzcb .full{grid-column:1/3}.lzflag:empty{display:none}
+.lzcb label>span.hint,label>span.hint{white-space:normal}.lzcb>*{min-width:0}

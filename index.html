@@ -187,11 +187,8 @@
         <div class="hint">Makes a new grey line round all the lines: <b>Outline gap</b> = how far outside the lines (0–1 mm hugs them). <b>Tightness</b> 10 follows into every pocket, 1 gives a smooth outline. Holes you made are kept. Drag it with the Cut out tool to fine-tune.</div>
     </div></details>
     <details name="acc" id="sec-laser"><summary>5 · Laser steps</summary><div class="body">
-      <div class="hint">Tap a step to open it. Power is % of your laser max S, speed in mm/min. Written into each .nc file.</div>
-      <div id="lzSteps"></div>
-      <label><span>Laser max S ($30)</span><input type="number" id="smax" value="1000" min="1" max="100000" step="1"></label>
-      <div class="row"><button id="burnReset" class="grow">↺ Reset to defaults</button></div>
-      <div class="hint">Defaults: Engrave lines Vector 25% at 3000 mm/min. Cut Vector 100% at 1000 mm/min, 3 passes, each cut line gets all its passes, holes first. Your changes are kept on this device.</div>
+      <div class="hint">Power, speed and passes for each step are set in the <b>Burn settings</b> sheet - the same one Export opens.</div>
+      <div class="row"><button id="lzOpenMenu" class="accent grow">🔥 Burn settings…</button></div>
     </div></details>
     <details name="acc" id="sec-sheet"><summary>6 · Sheet (blank &amp; copies)</summary><div class="body">
       <label class="chk big"><input type="checkbox" id="shOn">Place on a blank</label>
@@ -227,6 +224,16 @@
 </main>
 <div id="help" hidden><div class="hcard2"><div id="helpStep"></div><div class="row"><button id="helpSkip">Close</button><div class="grow"></div><button id="helpBack">‹ Back</button><button id="helpNext" class="accent">Next ›</button></div></div></div>
 <div id="toast" hidden></div>
+<dialog id="lzDlg" class="lzdlg"><h3>Burn settings</h3>
+  <div class="hint" id="lzWhat"></div>
+  <div id="lzBurn" class="lzburn"><div class="hint">Tap a step to open it. Each step has its own settings. Power is % of your laser max S, speed in mm/min.</div><div id="lzSteps"></div></div>
+  <details class="lzacc lzmore"><summary><span class="lzst">More laser settings</span> <span class="lzsum" id="lzMoreSum"></span></summary><div class="lzcb">
+    <label>Laser max S ($30) <input type="number" id="smax" inputmode="numeric" value="1000" min="1" max="100000" step="1"></label>
+    <label class="full"><span class="hint" id="lzSheetInfo"></span></label>
+    <div class="full lzrow"><button id="lzSheetBtn">▦ Blank &amp; copies…</button><button id="burnReset">↺ Reset to defaults</button></div>
+    <label class="full"><span class="hint">Defaults: Etch lines Vector 25% at 3000 mm/min. Cut Vector 100% at 1000 mm/min, 3 passes, each cut line gets all its passes, holes first. Your changes are kept on this device.</span></label></div></details>
+  <label class="lzhow">Save as <select id="lzHow"><option value="zip">One .zip (Windows: right-click › Extract All)</option><option value="files">Separate files</option><option value="share">Share (send to laptop, Drive…)</option><option value="svg">SVG artwork only</option></select></label>
+  <div class="lzbbtn"><button id="lzDlgCancel">Cancel</button><button id="lzDlgGo" class="accent">Export</button></div></dialog>
 <script src="js/bez.js"></script>
 <script src="js/trace.js"></script>
 <script src="js/svgin.js"></script>
