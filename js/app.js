@@ -1,6 +1,6 @@
 // Waylands Path v3 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v3.1';
+const APP_VERSION = 'v3.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -71,6 +71,7 @@ function paint() { const d = window.devicePixelRatio || 1, W = cv.width, H = cv.
   const hi = new Set(act); if (tool === 'skip' && skip.first >= 0) hi.add(skip.first); if (pen && S.paths[pen.pi]) hi.add(pen.pi);
   if (hi.size) { ctx.strokeStyle = tool === 'skip' ? '#e8590c' : '#1971c2'; ctx.lineWidth = 2.4 * px; ctx.beginPath(); for (const pi of hi) if (S.paths[pi]) tracePath(S.paths[pi]); ctx.stroke(); }
   if (tool === 'nodes' || tool === 'pen') paintNodes(px, hi);
+  if (window.T2) T2.paint(px);
   if (overlay && overlay.box) { const [a, b] = overlay.box; ctx.fillStyle = 'rgba(25,113,194,0.08)'; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = px; ctx.setLineDash([5 * px, 4 * px]); ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.setLineDash([]); }
   if (overlay && overlay.pt) { ctx.fillStyle = '#e8590c'; ctx.beginPath(); ctx.arc(overlay.pt[0], overlay.pt[1], 5 * px, 0, 7); ctx.fill(); } }
 const isSel = (pi, j) => sel.has(pi + ':' + j);
@@ -284,11 +285,11 @@ function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.l
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
 function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); tool = t; document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
-  document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; draw(); }
+  document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); draw(); }
 document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
 $('delWhole').onclick = () => { delMode = 'whole'; $('delWhole').classList.add('on'); $('delStretch').classList.remove('on'); $('delTip').textContent = 'Tap a line: the whole line is removed.'; };
-const ACT = { nCorner: () => nodeType(false), nSmooth: () => nodeType(true), nLine: () => segType(true), nCurve: () => segType(false), nAdd: addNode, nDel: delNodes, nBreak: breakNodes, nJoin: joinNodes, nSeg: delSegs, nStraight: straighten, nAll: selectLine };
+const ACT = { nCorner: () => nodeType(false), nSmooth: () => nodeType(true), nLine: () => segType(true), nCurve: () => segType(false), nAdd: addNode, nDel: delNodes, nBreak: () => { if (!sel.size && act.size === 1) { const pi = [...act][0]; setTool('line'); T2.startBreak(pi); return; } breakNodes(); }, nJoin: joinNodes, nSeg: delSegs, nStraight: straighten, nAll: selectLine };
 for (const id in ACT) $(id).onclick = ACT[id];
 document.querySelectorAll('[data-nudge]').forEach(b => b.onclick = () => { const [x, y] = b.dataset.nudge.split(',').map(Number), st = +$('nudgeMm').value || 0.5; nudge(x * st, y * st); });
 // ---------- gestures (one finger edits; two fingers always move/zoom) ----------
@@ -305,6 +306,7 @@ const up = e => { ptrs.delete(e.pointerId); if (pinch) { if (ptrs.size < 2) pinc
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); cancelGesture(); pinch = null; });
 cv.addEventListener('wheel', e => { e.preventDefault(); const p = cvPt(e), k = Math.exp(-e.deltaY * 0.0015), ns = Math.max(0.05, Math.min(80, view.s * k)), kk = ns / view.s; view.tx = p[0] - (p[0] - view.tx) * kk; view.ty = p[1] - (p[1] - view.ty) * kk; view.s = ns; draw(); }, { passive: false });
 function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap: null };
+  if ((tool === 'line' || tool === 'shapes') && window.T2) return T2.down(e, p, u, base);
   if (tool === 'move' || !S.paths.length && tool !== 'pen') return Object.assign(base, { kind: 'pan', tx: view.tx, ty: view.ty });
   if (tool === 'pen') { const g = penDown(u, e); return g ? Object.assign(base, g) : null; }
   if (tool === 'erase' || tool === 'skip') return Object.assign(base, { kind: 'tap', tx: view.tx, ty: view.ty });
@@ -317,6 +319,7 @@ function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap
   const sh = hitPath(u, tolU); if (sh && act.has(sh.pi)) return Object.assign(base, { kind: 'seg', h: sh, snap: snap() });
   return Object.assign(base, { kind: 'box', h: sh }); }
 function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.hypot(p[0] - g.p0[0], p[1] - g.p0[1]) < (e.pointerType === 'mouse' ? 3 : 7)) return; g.moved = true;
+  if (g.t2) { T2.move(g, p, u, e); return; }
   if (g.kind === 'pan') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
   if (g.kind === 'tap') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
   if (g.kind === 'pen') { penDrag(g, u); return; }
@@ -326,6 +329,7 @@ function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.
   if (g.kind === 'seg') { S.paths = BZ.clone(g.snap); const p2 = S.paths[g.h.pi]; BZ.bend(p2, g.h.k, g.h.t, u[0] - g.u0[0], u[1] - g.u0[1]); act = new Set([g.h.pi]); draw(); return; }
   if (g.kind === 'box') { overlay = { box: [g.u0, u] }; draw(); } }
 function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
+  if (g.t2) { T2.up(g, e); return; }
   if (g.kind === 'pan') return;
   if (g.kind === 'tap') { if (!g.moved) { if (tool === 'erase') { const h = hitPath(g.u0, tolPx(e)); if (h) deleteStretch(h); else toast('Tap right on a line to delete it'); } else skipTap(g.u0, e); } return; }
   if (g.kind === 'pen') { if (g.moved) { saveSoon(); updStats(); } return; }
@@ -338,10 +342,11 @@ function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
     lastTapT = now; lastTapU = g.u0; overlay = { pt: g.h.pt }; updSel(); draw(); setTimeout(() => { if (overlay && overlay.pt) { overlay = null; draw(); } }, 900); return; }
   if (g.kind === 'box') { if (!g.moved) { if (g.h) { act = new Set([g.h.pi]); sel.clear(); lastTap = { pi: g.h.pi, k: g.h.k, t: g.h.t }; lastTapT = Date.now(); lastTapU = g.u0; } else clearSel(); updSel(); draw(); return; } const a = g.u0, b = toU(...cvPt(e)), x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
     sel.clear(); act.clear(); S.paths.forEach((p, pi) => p.n.forEach((nd, j) => { if (nd.x >= x0 && nd.x <= x1 && nd.y >= y0 && nd.y <= y1) { sel.add(pkey(pi, j)); act.add(pi); } })); lastTap = null; updSel(); draw(); } }
-function cancelGesture() { if (!gest) return; if (gest.snap && gest.moved) { S.paths = gest.snap; } if (gest.kind === 'pan' || gest.kind === 'tap') { view.tx = gest.tx; view.ty = gest.ty; } gest = null; overlay = null; draw(); }
+function cancelGesture() { if (!gest) return; if (gest.restore && gest.moved) gest.restore(); if (gest.snap && gest.moved) { S.paths = gest.snap; } if (gest.kind === 'pan' || gest.kind === 'tap' || gest.t2 === 'pan' || gest.t2 === 'tap') { view.tx = gest.tx; view.ty = gest.ty; } gest = null; overlay = null; draw(); }
 window.addEventListener('keydown', e => { if (/input|select|textarea/i.test((e.target.tagName || ''))) return; const z = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
   if (z && !e.shiftKey) { e.preventDefault(); undo(); return; } if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (z && e.shiftKey))) { e.preventDefault(); redo(); return; }
   if (tool === 'pen' && (e.key === 'Enter' || e.key === 'Escape')) { penDone(); return; }
+  if ((tool === 'line' || tool === 'shapes') && e.key === 'Escape' && window.T2) { T2.cancel(); draw(); return; }
   if (tool !== 'nodes') return; const st = (+$('nudgeMm').value || 0.5) * (e.shiftKey ? 5 : 1), A = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
   if (A && sel.size) { e.preventDefault(); nudge(A[0] * st, A[1] * st); } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel.size) { e.preventDefault(); delNodes(); } });
 $('undoBtn').onclick = undo; $('redoBtn').onclick = redo; $('fitBtn').onclick = fit;
@@ -409,7 +414,8 @@ const HELP = [
   ['🖼️', 'Open a line drawing', 'Open a PNG or JPG line drawing (like AI line art or a colouring page) or an SVG. Waylands Path traces one clean line down the middle of every drawn line, and puts a <b>grey line</b> round the outside: that is your <b>cut line</b>.'],
   ['⦿', 'Fix points with Nodes', 'Tap a line to show its points. Drag a point, or drag the middle of a line to bend it. Pick a point to get its curve handles. Buttons: <b>Sharp / Smooth</b>, <b>Straight / Curve</b>, <b>+ Point / − Point</b>, <b>Break / Join</b>, <b>Delete piece</b>. Double-tap a line to add a point.'],
   ['✒️', 'Pen and Delete', '<b>Pen</b>: tap for sharp points, press and drag for curves, tap the first point to close, then <b>Done</b>. <b>Delete</b>: tap a line and it goes, up to the junction each side.'],
-  ['⤫', 'Skip over an obstacle', '<b>Skip</b> › <b>Skip over</b>: tap a line, then the shape it should pass behind (a window, ring, strap). The line stops exactly at the edge and carries on, in line, on the other side. <b>Continue across</b> joins two pieces in line and stops them at anything in the way.'],
+  ['<svg viewBox="0 0 24 24" width="44" height="44"><path d="M3 19 L9 13 M13 9 L21 3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M9 13 L13 9" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.5 2" fill="none"/></svg>', 'Line with breaks', '<b>Line</b>: tap where the line starts, then where it ends. Keep it <b>Straight</b>, or tap <b>Arch</b> and drag the round handle to bend it. <b>Next</b>, then tap two points on the line for each break (tap more pairs for more breaks) and <b>Confirm</b>. To break a line you already have, pick it with <b>Nodes</b> and press <b>Break</b> (or Line › <b>Break a line</b>). The laser is off across every break.'],
+  ['⬡', 'Shapes', '<b>Shapes</b>: pick a circle, triangle, square, more sides or a star, then press and drag on the design. Drag the square handles to stretch, the green ↻ handle to turn, the middle to move. Tick <b>Cut-off line</b> for a flat side (Flat bottom / top / left / right, or drag the red dots). <b>Done</b> makes it a normal line you can fine-tune with Nodes.'],
   ['🔥', 'Size and laser', 'Set the <b>Width</b> of the finished piece in mm, then <b>Share</b> or <b>Save laser zip</b>. Engraving burns first, then the cut. Every jump between lines is laser-off. In LaserGRBL open each .nc file and press Start - they line up by themselves.']];
 let helpI = 0;
 function showHelp(i = 0) { helpI = i; const [ic, t, b] = HELP[i]; $('helpStep').innerHTML = `<div class="stepn">Step ${i + 1} of ${HELP.length}</div><div class="hpic">${ic}</div><h2>${t}</h2><p>${b}</p>`;
@@ -423,7 +429,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: clean line tracing, Inkscape-style points, Skip over'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Line tool with breaks, Shapes with cut-off line'; $('verOut').textContent = APP_VERSION;
 $('updBtn').onclick = () => location.reload();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => {
   const had = !!navigator.serviceWorker.controller;

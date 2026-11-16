@@ -13,7 +13,7 @@ main{display:grid;grid-template-columns:1fr 340px;grid-template-rows:1fr auto;he
 .stats{position:absolute;left:8px;top:8px;background:rgba(22,35,43,.85);color:#fff;padding:3px 9px;border-radius:12px;font-size:12px;pointer-events:none}
 .busy{position:absolute;right:8px;top:8px;background:var(--cop);color:#111;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
 .empty{position:absolute;inset:0;display:grid;place-items:center}
-#tools{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:6px 8px 2px}
+#tools{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;padding:6px 8px 2px}
 .tool{display:flex;flex-direction:column;align-items:center;gap:1px;font-size:22px;padding:6px 0;min-height:58px;line-height:1.1}
 .tool span{font-size:12px}
 .tool.on{background:var(--acc);color:#082522;border-color:var(--acc);font-weight:600}
@@ -96,3 +96,19 @@ body.home header,body.home main{visibility:hidden}
 .more>summary,.adv>summary{cursor:pointer;color:var(--dim);font-size:13px;padding:4px 0}
 .more .row{margin-top:6px}
 @media (min-width:900px){.nbtns{grid-template-columns:repeat(9,1fr)}}
+/* v3.2 guided Line tool and Shapes tool */
+.gopts{flex-direction:column;align-items:stretch;gap:6px}
+.hintbar{background:#fff4e6;color:#5c2d00;border:1px solid #ffc078;border-radius:10px;padding:9px 12px;font-size:16px;line-height:1.35}
+.hintbar b{color:#d9480f}
+.gbtns{display:flex;gap:6px;flex-wrap:wrap}
+.gbtns button{flex:1 1 30%;min-height:48px;font-size:16px}
+.gbtns button.on{outline:3px solid var(--acc)}
+.shapes{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.shapes button{display:flex;flex-direction:column;align-items:center;min-height:56px;font-size:22px;padding:4px 2px}
+.shapes button span{font-size:11px}
+.shapes button.on{background:var(--acc);color:#082522}
+.sides input{width:64px;min-height:40px;font-size:16px}
+.chk.big{font-size:16px;font-weight:600}
+@media (max-width:420px){.shapes{grid-template-columns:repeat(4,1fr)}}
+#toolOpts{max-height:46vh;overflow-y:auto}
+.ic{width:26px;height:26px;display:block}.tool .ic{width:24px;height:24px;margin:1px 0 2px}.shapes .ic{width:26px;height:26px;margin-bottom:2px}
