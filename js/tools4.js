@@ -155,7 +155,7 @@ window.T4 = (() => {
     BR.a = BR.b = BR.plan = null; changed(); panel(); }
   // ================= Eraser =================
   function applyRub(a, b, g) { const r = RB.px / view.s, x0 = Math.min(a[0], b[0]) - r, x1 = Math.max(a[0], b[0]) + r, y0 = Math.min(a[1], b[1]) - r, y1 = Math.max(a[1], b[1]) + r;
-    const inBrush = q => BZ.segD(q, a, b)[0] <= r, step = Math.max(0.3, r / 5); let cand = S.paths.map((p, i) => i).filter(pi => !S.paths[pi].cut && nearBox(pi, x0, y0, x1, y1));
+    const inBrush = q => BZ.segD(q, a, b)[0] <= r, step = Math.max(0.3, r / 5); let cand = S.paths.map((p, i) => i).filter(pi => !S.paths[pi].cut && !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1));
     if (RB.mode === 'all') { const n = clipAll(cand, inBrush, step); if (n && g) g.erased += n; return; }
     // doubled lines only: shorter line loses the bit lying on top of another line
     // rank = the line's whole length when the rub started (pieces keep it), so the real line never loses out to a shorter copy
@@ -228,7 +228,7 @@ window.T4 = (() => {
   function doClear() { const regs = clRegions(); if (!regs.length) { toast(CL.mode === 'poly' ? 'Tap at least 3 points round the area' : 'Tap inside an area first (or drag a box)'); return; }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of regs) { const p = r.kind === 'face' ? r.g : 0; x0 = Math.min(x0, r.bb.x0 - p); y0 = Math.min(y0, r.bb.y0 - p); x1 = Math.max(x1, r.bb.x1 + p); y1 = Math.max(y1, r.bb.y1 + p); }
     const G = grid(), faces = regs.filter(r => r.kind === 'face' && G && r.sig === G.sig), geo = regs.filter(r => r.kind !== 'face'); if (faces.length < regs.filter(r => r.kind === 'face').length) { CL.regs = geo; panel(); draw(); toast('The lines changed - tap the areas again'); return; }
-    const inside = q => geo.some(r => inReg(r, q)) || (faces.length > 0 && inFaces(faces, G, q)), snap0 = snap(), list = S.paths.map((p, i) => i).filter(pi => isEtch(S.paths[pi]) && nearBox(pi, x0, y0, x1, y1)), n = clipAll(list, inside, Math.max(0.25, 1.2 / view.s), faces.length ? 2.5 / G.s : 0.3);
+    const inside = q => geo.some(r => inReg(r, q)) || (faces.length > 0 && inFaces(faces, G, q)), snap0 = snap(), list = S.paths.map((p, i) => i).filter(pi => isEtch(S.paths[pi]) && !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1)), n = clipAll(list, inside, Math.max(0.25, 1.2 / view.s), faces.length ? 2.5 / G.s : 0.3);
     if (!n) { toast(CL.grow ? 'No lines in that area' : 'No lines inside that area - tick "Include border lines" to remove its outline too', 4500); return; } undoSt.push(snap0); redoSt = []; CL.regs = []; CL.pts = []; changed(); panel(); toast(`Cleared - ${n} line${n > 1 ? 's' : ''} removed or trimmed at the edge. Undo brings them back.`, 3500); }
   // ================= panel & paint =================
   const HINT = { p2p: 'Tap, tap, tap: straight lines point to point (they snap onto lines). Drag a line to bend it, drag a dot to move it. Double-tap or Done to finish.',

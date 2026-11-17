@@ -39,6 +39,10 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v4.7 – Hanging hole (exact size in mm)
+
+☰ Menu › **Add shape** › **Hanging hole**. Type the hole Ø in mm (default 4 mm, the same as Wayland Forge; the last size used is remembered for every project), then tap the design where it goes, or tap **⤒ Centre at top** (it leaves the typed mm of wood above the hole, default 3 mm). The size shows on screen next to each hole (Ø 4 mm). The hole is a cut by default (untick *Cut it out* to etch a ring), a true circle cut as one line, inside cuts first with your cut passes. Drag it to move it (Shapes › Hanging hole or the Cut out tool); type a new Ø to resize it. Its mm size is rebuilt exactly whenever anything changes, so a new Size, the outer cut rebuild, Clear space or the eraser can't change it. Optional **Kerf** (default 0): the laser follows a line Ø − kerf so the finished hole equals the typed Ø. Designs without a hanging hole give byte-identical laser files to v4.6.
+
 ## v4.6 – Designs from Wayland Forge
 
 Wayland Forge's **✏️ Send to Waylands Path** button opens its design here as a new project: the true mm size is kept, letters arrive as outlines, Forge's cut lines stay cuts (shaded grey), ring lines keep their width, and laser 0,0 is the bottom-left corner of the design. If Waylands Path was opened another way, the home screen shows "A design from Wayland Forge is waiting" with Open it / Not now. Laser output for existing designs is byte-for-byte the same as v4.5.

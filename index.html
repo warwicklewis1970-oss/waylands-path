@@ -123,8 +123,18 @@
           <button data-shape="p6" title="Hexagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="17.0,3.3 22.0,12.0 17.0,20.7 7.0,20.7 2.0,12.0 7.0,3.3" fill="currentColor"/></svg><span>6 sides</span></button>
           <button data-shape="p8" title="Octagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="15.8,2.8 21.2,8.2 21.2,15.8 15.8,21.2 8.2,21.2 2.8,15.8 2.8,8.2 8.2,2.8" fill="currentColor"/></svg><span>8 sides</span></button>
           <button data-shape="star" title="Star"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12.0,2.0 14.5,8.6 21.5,8.9 16.0,13.3 17.9,20.1 12.0,16.2 6.1,20.1 8.0,13.3 2.5,8.9 9.5,8.6" fill="currentColor"/></svg><span>Star</span></button>
+          <button data-hole="1" class="hhbtn" title="Hanging hole: an exact round hole, size typed in mm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg><span>Hanging hole</span></button>
         </div>
-        <div class="row"><label class="sides">Sides / points <input type="number" id="shSides" min="3" max="12" step="1" value="6" inputmode="numeric"></label><label class="chk"><input type="checkbox" id="shEven">Keep it even (circle / regular)</label></div>
+        <div id="hhBox" class="hhbox">
+          <div class="hintbar" id="hhHint"></div>
+          <div class="row hhrow"><label class="hhd">Hole Ø <input type="number" id="hhD" inputmode="decimal" min="0.5" max="50" step="0.1" value="4"> mm</label><label class="hhk">Kerf <input type="number" id="hhK" inputmode="decimal" min="0" max="1" step="0.01" value="0"> mm</label></div>
+          <div class="hint" id="hhNote"></div>
+          <div class="row"><button id="hhTop" class="accent grow">⤒ Centre at top</button><label class="hhk">leaving <input type="number" id="hhGap" inputmode="decimal" min="0" max="50" step="0.5" value="3"> mm of wood above</label></div>
+          <label class="chk"><input type="checkbox" id="hhCut" checked>Cut it out (grey) - untick to etch a ring instead</label>
+          <div class="hint">The size you type is remembered for your next projects. Holes are cut first, before the outside, with your cut passes.</div>
+          <div class="gbtns"><button id="hhDel">🗑 Remove hole</button><button id="hhDone" class="accent">✓ Done</button></div>
+        </div>
+        <div class="shnorm"><div class="row"><label class="sides">Sides / points <input type="number" id="shSides" min="3" max="12" step="1" value="6" inputmode="numeric"></label><label class="chk"><input type="checkbox" id="shEven">Keep it even (circle / regular)</label></div>
         <label class="chk big"><input type="checkbox" id="shTrimOn">Cut-off line (straight edge)</label>
         <div id="shTrimBox" hidden>
           <div class="row"><button data-shtrim="bottom" class="grow">Flat bottom</button><button data-shtrim="top" class="grow">Flat top</button><button data-shtrim="left" class="grow">Flat left</button><button data-shtrim="right" class="grow">Flat right</button></div>
@@ -134,7 +144,7 @@
           <div class="hint">Or drag the red dots on the shape: one moves the cut-off line, the other turns it. 0% = through the middle (a half circle).</div>
         </div>
         <label class="chk"><input type="checkbox" id="shCut">Use as a cut outline (grey) instead of an etch line</label>
-        <div class="gbtns"><button id="shCancel">✕ Cancel</button><button id="shDone" class="accent">✓ Done</button></div>
+        <div class="gbtns"><button id="shCancel">✕ Cancel</button><button id="shDone" class="accent">✓ Done</button></div></div>
       </div>
       <div data-opts="skip" class="topts" hidden>
         <div class="seg"><button id="skipSkip" class="on">Skip over</button><button id="skipCont">Continue across</button></div>
@@ -243,6 +253,7 @@
 <script src="js/app.js"></script>
 <script src="js/tools2.js"></script>
 <script src="js/tools4.js"></script>
+<script src="js/hole.js"></script>
 <script src="js/sync.js"></script>
 </body>
 </html>
