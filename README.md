@@ -39,6 +39,17 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v4.8 - Tabs for stands
+
+Menu › Add shape › **Tabs** (after Hanging hole). Rectangular tabs joined to the bottom of the outside cut line, so the outside cut is one closed line that goes down and around each tab.
+
+* **Standard tabs** button: 2 tabs, 10 mm wide, 4 mm deep, 35 mm gap between them, centred under the lowest edge, with 0.15 × 0.8 mm crush bumps in the middle of each tab's side faces (for the 10 × 3.9 mm base slot).
+* Every size is a typed mm box (width, depth, number, gap, bump size, bump width). The last values used are remembered; **Reset to standard** puts the standard back.
+* Shows the door body size; **Set body height** resizes the design so the body is exactly the typed height (standard 100 mm, 104 mm overall with tabs).
+* Tap a tab to pick it, drag it along the bottom, remove it or all of them; Undo works.
+* Holes and inner cuts are still cut first; the outside cut with the tabs is cut last with your cut passes. Remaking the outside cut keeps the tabs.
+* Designs without tabs produce exactly the same G-code as v4.7.
+
 ## v4.7 – Hanging hole (exact size in mm)
 
 ☰ Menu › **Add shape** › **Hanging hole**. Type the hole Ø in mm (default 4 mm, the same as Wayland Forge; the last size used is remembered for every project), then tap the design where it goes, or tap **⤒ Centre at top** (it leaves the typed mm of wood above the hole, default 3 mm). The size shows on screen next to each hole (Ø 4 mm). The hole is a cut by default (untick *Cut it out* to etch a ring), a true circle cut as one line, inside cuts first with your cut passes. Drag it to move it (Shapes › Hanging hole or the Cut out tool); type a new Ø to resize it. Its mm size is rebuilt exactly whenever anything changes, so a new Size, the outer cut rebuild, Clear space or the eraser can't change it. Optional **Kerf** (default 0): the laser follows a line Ø − kerf so the finished hole equals the typed Ø. Designs without a hanging hole give byte-identical laser files to v4.6.

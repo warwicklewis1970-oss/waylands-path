@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4.7';
+const APP_VERSION = 'v4.8';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -23,7 +23,7 @@ const bbAll = () => BZ.bbox(S.paths);
 // mm per design unit: Width = the whole design (etch lines + cut line)
 const kmm = () => { const b = bbAll(); return b && b.w > 0 ? S.widthMm / b.w : 1; };
 function clearSel() { sel.clear(); act.clear(); lastTap = null; skip.first = -1; }
-function changed(opts = {}) { if (window.HH) HH.sync(); if (!opts.keepSel) { sel.clear(); } else pruneSel(); updSel(); updUndo(); updStats(); draw(); saveSoon(); exSummary(); cutInfo(); }
+function changed(opts = {}) { if (window.HH) HH.sync(); if (window.TB) TB.sync(); if (!opts.keepSel) { sel.clear(); } else pruneSel(); updSel(); updUndo(); updStats(); draw(); saveSoon(); exSummary(); cutInfo(); }
 function pruneSel() { for (const k of [...sel]) { const [pi, j] = k.split(':').map(Number); if (!S.paths[pi] || j >= S.paths[pi].n.length) sel.delete(k); } for (const pi of [...act]) if (!S.paths[pi]) act.delete(pi); }
 // ---------- burn settings (per device, like Wayland Forge) ----------
 const BURN_KEY = 'wp-burn1';
@@ -81,6 +81,7 @@ function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.widt
   if (window.T2) T2.paint(px);
   if (window.T4) T4.paint(px);
   if (window.HH) HH.paint(px);
+  if (window.TB) TB.paint(px);
   if (overlay && overlay.box) { const [a, b] = overlay.box; ctx.fillStyle = 'rgba(25,113,194,0.08)'; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = px; ctx.setLineDash([5 * px, 4 * px]); ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.setLineDash([]); }
   if (overlay && overlay.pt) { ctx.fillStyle = '#e8590c'; ctx.beginPath(); ctx.arc(overlay.pt[0], overlay.pt[1], 5 * px, 0, 7); ctx.fill(); } }
 const isSel = (pi, j) => sel.has(pi + ':' + j);
@@ -110,13 +111,13 @@ function innerCuts() { const c = cuts(); if (!c.length) return []; const ab = BZ
   const dep = c.length > 1 ? LZ.cutDepths(polys) : [0]; return c.filter((p, i) => { const b = BZ.bbox([p]); return dep[i] > 0 || (b && b.w * b.h < A * 0.25); }); }
 // Tightness 1-10: how far the outside cut may bridge across pockets (10 = follows every pocket, 1 = smooth outline)
 const bridgeMm = () => { const t = Math.max(1, Math.min(10, +S.cutTight || 8)); return Math.round((11 - t) * 0.5 * 100) / 100; };
-function makeCut(auto) { const e = etch(); if (!e.length) { toast('No lines to go around yet.'); return; } const keepIn = innerCuts(), outerOld = cuts().filter(p => !keepIn.includes(p)), all = e.concat(outerOld, keepIn.filter(p => p.hole)), ab = BZ.bbox(all), k = kmm(), offU = S.cutOff / k, brU = bridgeMm() / k, lineU = S.lineMm / k, pad = offU + brU + lineU * 2 + 2 / k;
+function makeCut(auto) { const e = etch(); if (!e.length) { toast('No lines to go around yet.'); return; } const keepIn = innerCuts(), outerOld = cuts().filter(p => !keepIn.includes(p)), all = e.concat(outerOld.map(p => p.tabBase ? { n: p.tabBase, z: true } : p), keepIn.filter(p => p.hole)), tabCfg = (outerOld.find(p => p.tabs && p.tabs.xs && p.tabs.xs.length) || {}).tabs, ab = BZ.bbox(all), k = kmm(), offU = S.cutOff / k, brU = bridgeMm() / k, lineU = S.lineMm / k, pad = offU + brU + lineU * 2 + 2 / k;
   const s = 1100 / Math.max(ab.w + 2 * pad, ab.h + 2 * pad), w = Math.ceil((ab.w + 2 * pad) * s) + 2, h = Math.ceil((ab.h + 2 * pad) * s) + 2, ox = ab.x0 - pad, oy = ab.y0 - pad;
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.strokeStyle = '#000'; g.lineWidth = Math.max(1.5, lineU * s); g.lineCap = g.lineJoin = 'round'; g.beginPath();
   for (const p of all) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
   g.stroke(); const id = g.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = id[i * 4] < 160 ? 1 : 0;
   const loops = T.outerCut(m, w, h, offU * s, brU * s).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy]));
-  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); S.cutOn = true; syncInputs(); changed(); toast(auto ? 'No outside edge was found in the picture, so a grey cut line was made round the design.' : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
+  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? 'No outside edge was found in the picture, so a grey cut line was made round the design.' : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
 // ---------- tracing ----------
 // The tracer normally runs in a helper (js/worker.js) so the screen stays smooth. If the helper can't load, says nothing within a few
 // seconds, errors, or takes far too long, tracing carries on here on the main screen instead - never "Tracing..." forever.
@@ -332,7 +333,7 @@ function penDrag(g, u) { const p = S.paths[pen.pi], nd = p.n[g.j], dx = u[0] - n
 function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.length < 2) S.paths.splice(pen.pi, 1); pen = null; changed(); }
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
-function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); draw(); }
 document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool));
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
@@ -368,6 +369,7 @@ cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => 
   if (gest && gest.pid != null && e.pointerId !== gest.pid) return; cancelGesture(); pinch = null; });
 cv.addEventListener('wheel', e => { e.preventDefault(); const p = cvPt(e), k = Math.exp(-e.deltaY * 0.0015), ns = Math.max(0.05, Math.min(80, view.s * k)), kk = ns / view.s; view.tx = p[0] - (p[0] - view.tx) * kk; view.ty = p[1] - (p[1] - view.ty) * kk; view.s = ns; draw(); }, { passive: false });
 function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap: null };
+  if (window.TB && tool === 'shapes' && TB.on) return TB.down(e, p, u, base); // v4.8 tabs
   if (window.HH && tool === 'shapes' && HH.on) return HH.down(e, p, u, base); // v4.7 hanging hole
   if (window.HH && tool === 'cutout' && HH.hitHole(u, tolPx(e) * 0.6) >= 0) return HH.down(e, p, u, base); // drag a hole as a whole circle
   if ((tool === 'line' || tool === 'shapes') && window.T2) return T2.down(e, p, u, base);
@@ -384,6 +386,7 @@ function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap
   const sh = hitPath(u, tolU); if (sh && act.has(sh.pi)) return Object.assign(base, { kind: 'seg', h: sh, snap: snap() });
   return Object.assign(base, { kind: 'box', h: sh }); }
 function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.hypot(p[0] - g.p0[0], p[1] - g.p0[1]) < (e.pointerType === 'mouse' ? 3 : 7)) return; g.moved = true;
+  if (g.tb) { TB.move(g, p, u, e); return; }
   if (g.hh) { HH.move(g, p, u, e); return; }
   if (g.t2) { T2.move(g, p, u, e); return; }
   if (g.t4) { T4.move(g, p, u, e); return; }
@@ -396,6 +399,7 @@ function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.
   if (g.kind === 'seg') { S.paths = BZ.clone(g.snap); const p2 = S.paths[g.h.pi]; BZ.bend(p2, g.h.k, g.h.t, u[0] - g.u0[0], u[1] - g.u0[1]); act = new Set([g.h.pi]); draw(); return; }
   if (g.kind === 'box') { overlay = { box: [g.u0, u] }; draw(); } }
 function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
+  if (g.tb) { TB.up(g, e); return; }
   if (g.hh) { HH.up(g, e); return; }
   if (g.t2) { T2.up(g, e); return; }
   if (g.t4) { T4.up(g, e); return; }
@@ -441,7 +445,7 @@ function removeOverlaps() { const tolU = Math.max(S.lineMm * 0.6 / kmm(), 1.5 / 
   if (!removed) { toast('No overlapping lines found'); return; } pushUndo(); const out = []; S.paths.forEach((p, pi) => { if (dead.has(pi)) return; if (changes.has(pi)) out.push(...keepSegs(p, changes.get(pi))); else out.push(p); }); S.paths = out.map(dedupe); clearSel(); changed(); toast(`Removed ${removed} doubled-up piece${removed > 1 ? 's' : ''}`); }
 $('gapBtn').onclick = closeGapsAll; $('shortBtn').onclick = removeShort; $('overlapBtn').onclick = removeOverlaps;
 // ---------- export ----------
-function buildOut() { if (window.HH) HH.sync(); return LZ.build({ name: S.name, art: etch(), cut: cutActive() ? cuts() : [], widthMm: S.widthMm, burn: { engrave: burnOf('engrave'), cut: burnOf('cut') }, smax: smax(), lineMm: S.lineMm, pxmm: 10, sheet: S.sheet && S.sheet.on ? S.sheet : null }); }
+function buildOut() { if (window.HH) HH.sync(); if (window.TB) TB.sync(); return LZ.build({ name: S.name, art: etch(), cut: cutActive() ? cuts() : [], widthMm: S.widthMm, burn: { engrave: burnOf('engrave'), cut: burnOf('cut') }, smax: smax(), lineMm: S.lineMm, pxmm: 10, sheet: S.sheet && S.sheet.on ? S.sheet : null }); }
 // ---------- Sheet: blank size, margin, copies ----------
 const designFrame = () => LZ.frame(etch(), cutActive() ? cuts() : [], S.widthMm);
 function sheetUI() { const sh = S.sheet || (S.sheet = SHEET0()); $('shOn').checked = !!sh.on; $('shBody').hidden = !sh.on; $('shOff').hidden = !!sh.on;
@@ -536,7 +540,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Hanging hole with an exact size in mm (Menu › Add shape)'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Tabs for stands, sizes in mm (Menu › Add shape › Tabs)'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;

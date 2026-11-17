@@ -60,7 +60,7 @@ window.HH = (() => {
       if (pk) { ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 2.6 * px; ctx.beginPath(); ctx.arc(h.cx, h.cy, R, 0, Math.PI * 2); ctx.stroke(); }
       const t = `Ø ${h.d} mm`; ctx.font = `bold ${12 * px}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; const w = ctx.measureText(t).width, y = h.cy - R - 5 * px;
       ctx.fillStyle = pk ? '#1971c2' : 'rgba(20,20,20,0.78)'; ctx.fillRect(h.cx - w / 2 - 4 * px, y - 15 * px, w + 8 * px, 16 * px); ctx.fillStyle = '#fff'; ctx.fillText(t, h.cx, y - 1 * px); } }
-  function setOn(v) { H.on = !!v; if (!H.on) H.pick = -1; panel(); if (window.T2 && H.on) { T2.SH.cur = null; } draw(); }
+  function setOn(v) { H.on = !!v; if (!H.on) H.pick = -1; if (H.on && window.TB && TB.on) TB.setOn(false); panel(); if (window.T2 && H.on) { T2.SH.cur = null; } draw(); }
   function wire() { if (!$('hhBox')) return;
     document.querySelectorAll('[data-hole]').forEach(b => b.onclick = () => setOn(true));
     document.querySelectorAll('[data-shape]').forEach(b => b.addEventListener('click', () => setOn(false)));

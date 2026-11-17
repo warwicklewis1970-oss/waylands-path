@@ -124,6 +124,25 @@
           <button data-shape="p8" title="Octagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="15.8,2.8 21.2,8.2 21.2,15.8 15.8,21.2 8.2,21.2 2.8,15.8 2.8,8.2 8.2,2.8" fill="currentColor"/></svg><span>8 sides</span></button>
           <button data-shape="star" title="Star"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12.0,2.0 14.5,8.6 21.5,8.9 16.0,13.3 17.9,20.1 12.0,16.2 6.1,20.1 8.0,13.3 2.5,8.9 9.5,8.6" fill="currentColor"/></svg><span>Star</span></button>
           <button data-hole="1" class="hhbtn" title="Hanging hole: an exact round hole, size typed in mm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg><span>Hanging hole</span></button>
+          <button data-tabs="1" class="hhbtn" title="Tabs on the bottom edge for a stand: sizes typed in mm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v11h-4v5h-4v-5h-4v5H6v-5H2z" fill="currentColor"/></svg><span>Tabs</span></button>
+        </div>
+        <div id="tbBox" class="tbbox">
+          <div class="hintbar" id="tbHint"></div>
+          <div class="hint" id="tbBodyInfo"></div>
+          <div class="tbgrid">
+            <label>Tab width <span><input type="number" id="tbW" inputmode="decimal" min="1" max="200" step="0.1"> mm</span></label>
+            <label>Tab depth <span><input type="number" id="tbP" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
+            <label>Number of tabs <span><input type="number" id="tbN" inputmode="numeric" min="1" max="10" step="1"></span></label>
+            <label>Gap between tabs <span><input type="number" id="tbG" inputmode="decimal" min="0" max="500" step="0.5"> mm</span></label>
+            <label class="chk tbfull"><input type="checkbox" id="tbBump">Crush bumps on the tab sides (tight fit in the slot)</label>
+            <label>Bump size <span><input type="number" id="tbBh" inputmode="decimal" min="0" max="2" step="0.01"> mm</span></label>
+            <label>Bump width <span><input type="number" id="tbBw" inputmode="decimal" min="0.1" max="10" step="0.1"> mm</span></label>
+            <label>Body height <span><input type="number" id="tbBody" inputmode="decimal" min="5" max="2000" step="0.5"> mm</span></label>
+            <button id="tbSetBody">↕ Set body height</button>
+          </div>
+          <div class="row"><button id="tbStd" class="accent grow">▭ Standard tabs (centred at the bottom)</button></div>
+          <div class="hint">Sizes are remembered for your next projects. Tabs are part of the outside cut, which is cut last with your cut passes, after any holes.</div>
+          <div class="gbtns"><button id="tbReset">↺ Reset to standard</button><button id="tbDel">🗑 Remove all tabs</button><button id="tbDone" class="accent">✓ Done</button></div>
         </div>
         <div id="hhBox" class="hhbox">
           <div class="hintbar" id="hhHint"></div>
@@ -254,6 +273,7 @@
 <script src="js/tools2.js"></script>
 <script src="js/tools4.js"></script>
 <script src="js/hole.js"></script>
+<script src="js/tabs.js"></script>
 <script src="js/sync.js"></script>
 </body>
 </html>
