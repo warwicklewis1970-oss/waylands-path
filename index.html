@@ -236,7 +236,7 @@
         <canvas id="shPrev" class="shprev" width="600" height="600" aria-label="Blank preview"></canvas>
         <div class="hint" id="shInfo"></div>
       </div>
-      <div class="hint" id="shOff">Off: the laser 0,0 is the bottom-left corner of the design itself.</div>
+      <div id="shOff"><label class="brdrow">Border <span><input type="number" id="brdIn" class="brdin" inputmode="decimal" min="0" max="100" step="0.5"> mm</span></label><div class="hint brdhint"></div></div>
     </div></details>
     <details name="acc" id="sec-export"><summary>7 · Export &amp; share</summary><div class="body">
       <div class="hint" id="exSummary"></div>
@@ -261,6 +261,8 @@
   <details class="lzacc lzmore"><summary><span class="lzst">More laser settings</span> <span class="lzsum" id="lzMoreSum"></span></summary><div class="lzcb">
     <label>Laser max S ($30) <input type="number" id="smax" inputmode="numeric" value="1000" min="1" max="100000" step="1"></label>
     <label class="full"><span class="hint" id="lzSheetInfo"></span></label>
+    <label class="full brdrow" id="lzBrdRow">Border (no blank) <span><input type="number" id="lzBrd" class="brdin" inputmode="decimal" min="0" max="100" step="0.5"> mm</span></label>
+    <label class="full"><span class="hint brdhint"></span></label>
     <div class="full lzrow"><button id="lzSheetBtn">▦ Blank &amp; copies…</button><button id="burnReset">↺ Reset to defaults</button></div>
     <label class="full"><span class="hint">Defaults: Etch lines Vector 25% at 3000 mm/min. Cut Vector 100% at 1000 mm/min, 3 passes, each cut line gets all its passes, holes first. Your changes are kept on this device.</span></label></div></details>
   <label class="lzhow">Save as <select id="lzHow"><option value="zip">One .zip (Windows: right-click › Extract All)</option><option value="files">Separate files</option><option value="share">Share (send to laptop, Drive…)</option><option value="svg">SVG artwork only</option></select></label>

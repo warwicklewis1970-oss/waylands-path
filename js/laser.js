@@ -52,7 +52,8 @@ const LZ = (() => {
   const expand = (p, base, lineMm) => { const offs = widthOffs(p, lineMm); return offs ? offs.map(o => offsetPoly(base, o, !!p.z)) : [base]; };
   const polysG = (fr, paths) => [].concat(...paths.map(p => expand(p, toMmG(fr, BZ.flatten(p, 0.02 / fr.k)), fr.lineMm))).filter(p => p.length > 1);
   // ---- sheet layout: where each copy of the design sits, in laser mm (y up). No sheet = one copy at 0,0, area = the design. ----
-  function layout(fr, sh) { if (!sh || !sh.on) return { on: false, offs: [[0, 0]], ax0: 0, ay0: 0, ax1: fr.W, ay1: fr.H, W: fr.W, H: fr.H, n: 1, fits: true };
+  // v4.9: no blank -> optional border (mm) round the design, so laser 0,0 is a free corner `pad` mm below/left of the design (pad 0 = v4.8 output)
+  function layout(fr, sh, pad) { if (!sh || !sh.on) { const m = Math.max(0, +pad || 0); return { on: false, pad: m, offs: [[m, m]], ax0: m, ay0: m, ax1: m + fr.W, ay1: m + fr.H, W: fr.W + 2 * m, H: fr.H + 2 * m, n: 1, fits: true }; }
     const W = +sh.W, H = +sh.H, m = Math.max(0, +sh.margin || 0), gap = Math.max(0, +sh.gap || 0), dw = fr.W, dh = fr.H;
     let nx = Math.max(1, Math.round(+sh.nx || 1)), ny = Math.max(1, Math.round(+sh.ny || 1));
     const bw = nx * dw + (nx - 1) * gap, bh = ny * dh + (ny - 1) * gap, cen = sh.place !== 'margin';
@@ -77,7 +78,7 @@ const LZ = (() => {
     return { list: out, maxD }; }
   // cut G-code: same commands as every Vector step (M5 -> G0 S0 -> M4 S0 between lines, G1 at the step power), but in the safe order.
   // order 'line' (default): each line gets ALL its passes before the next line. 'pass': every line once per pass, still holes first each pass.
-  function cutG(fr, paths, b, smax, title, lay) { const Smax = Math.round(smax * b.P / 100), lim = { x0: 0, y0: 0, x1: lay.on ? lay.W : fr.W, y1: lay.on ? lay.H : fr.H };
+  function cutG(fr, paths, b, smax, title, lay) { const Smax = Math.round(smax * b.P / 100), lim = { x0: 0, y0: 0, x1: lay.W, y1: lay.H };
     const cx = v => R3(Math.min(lim.x1, Math.max(lim.x0, v))), cy = v => R3(Math.min(lim.y1, Math.max(lim.y0, v)));
     const { list } = cutOrder(polysLay(fr, paths, lay)), perLine = b.order !== 'pass', nH = list.filter(o => o.depth > 0).length;
     const L = [`; Waylands Path ${String(title).replace(/[^\w .-]/g, '').slice(0, 30)}`, `; F${b.F} S${Smax} of ${smax} x${b.passes}`, areaLine(fr, lay),
@@ -89,9 +90,9 @@ const LZ = (() => {
     if (perLine) list.forEach((o, i) => { for (let k = 0; k < b.passes; k++) { L.push(`; cut ${tag(o, i)} pass ${k + 1}/${b.passes}`); at = null; burn(o.p, !o.closed && k % 2 === 1); } });
     else for (let k = 0; k < b.passes; k++) { L.push(`; pass ${k + 1}`); at = null; list.forEach((o, i) => { L.push(`; cut ${tag(o, i)}`); burn(o.p, false); }); }
     L.push('M5', 'G0 X0 Y0 S0'); cutG.last = { list, perLine }; return L.join('\n') + '\n'; }
-  const areaLine = (fr, lay) => lay.on ? `; blank ${f2(lay.W)} x ${f2(lay.H)} mm, 0,0 = blank bottom-left; design area ${f2(lay.ax0)},${f2(lay.ay0)} to ${f2(lay.ax1)},${f2(lay.ay1)} mm (${lay.n} cop${lay.n > 1 ? 'ies' : 'y'})` : `; area 0,0 to ${f2(fr.W)},${f2(fr.H)} mm`;
+  const areaLine = (fr, lay) => !lay.on && lay.pad ? `; area 0,0 to ${f2(lay.W)},${f2(lay.H)} mm: design ${f2(lay.ax0)},${f2(lay.ay0)} to ${f2(lay.ax1)},${f2(lay.ay1)} mm with a ${f2(lay.pad)} mm border, laser zero ${f2(lay.pad)} mm below and left of the design` : lay.on ? `; blank ${f2(lay.W)} x ${f2(lay.H)} mm, 0,0 = blank bottom-left; design area ${f2(lay.ax0)},${f2(lay.ay0)} to ${f2(lay.ax1)},${f2(lay.ay1)} mm (${lay.n} cop${lay.n > 1 ? 'ies' : 'y'})` : `; area 0,0 to ${f2(fr.W)},${f2(fr.H)} mm`;
   // Vector G-code. Every jump between lines: M5 (laser off) -> G0 rapid with S0 -> M4 S0, then G1 burns at the step power.
-  function vecG(fr, paths, b, smax, title, lay) { lay = lay || layout(fr, null); const Smax = Math.round(smax * b.P / 100), W = lay.on ? lay.W : fr.W, H = lay.on ? lay.H : fr.H;
+  function vecG(fr, paths, b, smax, title, lay) { lay = lay || layout(fr, null); const Smax = Math.round(smax * b.P / 100), W = lay.W, H = lay.H;
     const cx = v => R3(Math.min(W, Math.max(0, v))), cy = v => R3(Math.min(H, Math.max(0, v)));
     const polys = orderPolys(chainPolys(polysLay(fr, paths, lay))), tr = travel(polys);
     const L = [`; Waylands Path ${String(title).replace(/[^\w .-]/g, '').slice(0, 30)}`, `; F${b.F} S${Smax} of ${smax} x${b.passes}`, areaLine(fr, lay),
@@ -115,7 +116,7 @@ const LZ = (() => {
   function rasterG(fr, paths, b, smax, title, lineMm, pxmm, lay) { lay = lay || layout(fr, null); const { d, pw, ph } = raster(fr, paths, lineMm, pxmm, lay); if (b.mode === 'dith') dither(d, pw, ph);
     const mm = 1 / pxmm, Smax = Math.round(smax * b.P / 100), gap = Math.max(2, Math.round(2 / mm)), crisp = b.mode !== 'ltl';
     const S = g => g >= 250 ? 0 : crisp ? Smax : g < 128 ? Smax : Math.round(Smax * (255 - g) / 255);
-    const XW = lay.on ? lay.W : fr.W, YH = lay.on ? lay.H : fr.H, cx = v => R3(Math.min(XW, Math.max(0, lay.ax0 + v))), cy = v => R3(Math.min(YH, Math.max(0, lay.ay0 + v)));
+    const XW = lay.W, YH = lay.H, cx = v => R3(Math.min(XW, Math.max(0, lay.ax0 + v))), cy = v => R3(Math.min(YH, Math.max(0, lay.ay0 + v)));
     const L = [`; Waylands Path ${String(title).replace(/[^\w .-]/g, '').slice(0, 30)}`, `; F${b.F} S${Smax} of ${smax} x${b.passes} ${TAG[b.mode]} ${pxmm} lines/mm`, areaLine(fr, lay), 'G90', 'G21', 'M5', 'G0 X0 Y0', 'M4 S0'];
     let n = 0, first = true;
     for (let pass = 0; pass < b.passes; pass++) { if (b.passes > 1) L.push(`; pass ${pass + 1}`); n = 0;
@@ -130,8 +131,8 @@ const LZ = (() => {
   const dStr = (fr, p) => { const m = q => `${R3((q[0] - fr.x0) * fr.k)} ${R3((q[1] - fr.y0) * fr.k)}`, n = p.n; if (!n.length) return '';
     let d = 'M' + m([n[0].x, n[0].y]); for (let k = 0; k < BZ.nseg(p); k++) { const s = BZ.seg(p, k); d += s.line ? 'L' + m(s.C[3]) : 'C' + m(s.C[1]) + ' ' + m(s.C[2]) + ' ' + m(s.C[3]); } return d + (p.z ? 'Z' : ''); };
   // SVG in true mm: width/height in mm, viewBox 0 0 W H, so LaserGRBL and Inkscape read it 1:1
-  function svg(fr, groups, title, lay) { lay = lay || layout(fr, null); const W = f2(lay.on ? lay.W : fr.W), H = f2(lay.on ? lay.H : fr.H);
-    const body = g => g.paths.map(p => widthOffs(p, fr.lineMm) ? expand(p, toMmSvg(fr, BZ.flatten(p, 0.02 / fr.k)), fr.lineMm).map(q => `<path d="M${q.map(v => R3(v[0]) + ' ' + R3(v[1])).join('L')}"/>`).join('\n') : `<path d="${dStr(fr, p)}"/>`).join('\n'), copies = g => lay.on ? lay.offs.map(o => `<g transform="translate(${R3(o[0])} ${R3(lay.H - o[1] - fr.H)})">\n${body(g)}\n</g>`).join('\n') : body(g);
+  function svg(fr, groups, title, lay) { lay = lay || layout(fr, null); const W = f2(lay.W), H = f2(lay.H);
+    const body = g => g.paths.map(p => widthOffs(p, fr.lineMm) ? expand(p, toMmSvg(fr, BZ.flatten(p, 0.02 / fr.k)), fr.lineMm).map(q => `<path d="M${q.map(v => R3(v[0]) + ' ' + R3(v[1])).join('L')}"/>`).join('\n') : `<path d="${dStr(fr, p)}"/>`).join('\n'), copies = g => lay.on || lay.pad ? lay.offs.map(o => `<g transform="translate(${R3(o[0])} ${R3(lay.H - o[1] - fr.H)})">\n${body(g)}\n</g>`).join('\n') : body(g);
     return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">\n<title>${esc(title)}</title>\n` +
       groups.map(g => `<g id="${g.id}" fill="none" stroke="${g.color}" stroke-width="${f2(g.width)}" stroke-linecap="round" stroke-linejoin="round">\n${copies(g)}\n</g>`).join('\n') + '\n</svg>\n'; }
   const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -151,7 +152,7 @@ const LZ = (() => {
   const tag = b => `${TAG[b.mode]} P${b.P} F${b.F}${b.passes > 1 ? ` x${b.passes}` : ''}`;
   // all files for one export
   function build(o) { const { name, art, cut, widthMm, burn, smax, lineMm, pxmm } = o, fr = frame(art, cut, widthMm); if (!fr) throw new Error('Nothing to export yet - open a picture first.'); fr.lineMm = lineMm;
-    const lay = layout(fr, o.sheet); if (lay.on && !lay.fits) throw new Error(`The ${lay.nx} x ${lay.ny} copies (${f2(lay.bw)} x ${f2(lay.bh)} mm) do not fit inside the margin of the ${f2(lay.W)} x ${f2(lay.H)} mm blank. Use fewer copies, a smaller width, or tap Fit as many as possible.`);
+    const lay = layout(fr, o.sheet, o.border); if (lay.on && !lay.fits) throw new Error(`The ${lay.nx} x ${lay.ny} copies (${f2(lay.bw)} x ${f2(lay.bh)} mm) do not fit inside the margin of the ${f2(lay.W)} x ${f2(lay.H)} mm blank. Use fewer copies, a smaller width, or tap Fit as many as possible.`);
     const base = (String(name || 'Waylands Path').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Waylands Path').slice(0, 40), size = lay.on ? `${lay.n}x on ${Math.round(lay.W)}x${Math.round(lay.H)}mm` : `${Math.round(fr.W)}x${Math.round(fr.H)}mm`;
     const steps = [{ key: 'engrave', label: 'Engrave lines', paths: art }]; if (cut && cut.length) steps.push({ key: 'cut', label: 'Cut outside', paths: cut });
     const files = [];
@@ -166,6 +167,7 @@ const LZ = (() => {
     return { fr, lay, steps, files, base, size, svgAll, svgName, zipName: `${base} laser.zip` }; }
   function readMe(base, fr, steps, smax, svgName, lay) { const L = [`WAYLANDS PATH - ${base}`, lay && lay.on ?
       `Blank: ${f2(lay.W)} x ${f2(lay.H)} mm with ${lay.n} cop${lay.n > 1 ? 'ies' : 'y'} of the ${f2(fr.W)} x ${f2(fr.H)} mm design. Laser 0,0 = BOTTOM-LEFT CORNER OF THE BLANK - put the laser there before Start.` :
+      lay && lay.pad ? `Design: ${f2(fr.W)} x ${f2(fr.H)} mm with a ${f2(lay.pad)} mm border all round (area ${f2(lay.W)} x ${f2(lay.H)} mm).\r\nSET YOUR LASER'S ZERO ${f2(lay.pad)} mm BELOW AND ${f2(lay.pad)} mm LEFT OF WHERE THE DESIGN'S BOTTOM-LEFT CORNER (lowest point, e.g. the tab bottoms) SHOULD GO. Nothing burns closer than ${f2(lay.pad)} mm to 0,0. Run Frame first.` :
       `Design area: ${f2(fr.W)} x ${f2(fr.H)} mm. Laser 0,0 = bottom-left corner of the design area.`, '',
     'IN LASERGRBL (Windows): unzip first (right-click the zip > Extract All > Extract).', 'Every .nc file lines up by itself - same 0,0, same design area. Nothing to size or offset.', ''];
     steps.forEach(s => { L.push(`STEP ${s.n}: ${s.label.toUpperCase()}`, `  File: ${s.file}`, `  ${({ vec: 'Vector', ltl: 'Line To Line', dith: 'Dithering' })[s.b.mode]}, power ${s.b.P}% (S${Math.round(smax * s.b.P / 100)} of ${smax}), speed ${s.b.F} mm/min, ${s.b.passes} pass${s.b.passes > 1 ? 'es' : ''}.`,

@@ -39,6 +39,15 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v4.9 - Laser border (zero is a free corner)
+
+When no blank is set, the laser files now leave a **border** (default **10 mm**, typed in mm, remembered on this device) round the design, like Wayland Forge's page border. Every etch and cut line (and the SVGs) moves right and up by the border, so laser 0,0 is a free corner and nothing burns closer than the border to zero - the tabs no longer sit right on the machine's edge.
+
+* Set it in Export › More laser settings › **Border (no blank)**, or Menu › Sheet › **Border**. 0 = the old v4.8 behaviour (exactly the same files).
+* Set your laser's zero the border distance below and left of where the design's bottom-left (the tab bottoms) should go. The read-me says so too.
+* Files with **Place on a blank** turned on are unchanged (the blank already has its own margin).
+* Curves at the very edge are no longer clipped by up to 0.04 mm (they were clamped to the design box before).
+
 ## v4.8 - Tabs for stands
 
 Menu › Add shape › **Tabs** (after Hanging hole). Rectangular tabs joined to the bottom of the outside cut line, so the outside cut is one closed line that goes down and around each tab.

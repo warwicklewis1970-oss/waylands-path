@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4.8';
+const APP_VERSION = 'v4.9';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -445,10 +445,17 @@ function removeOverlaps() { const tolU = Math.max(S.lineMm * 0.6 / kmm(), 1.5 / 
   if (!removed) { toast('No overlapping lines found'); return; } pushUndo(); const out = []; S.paths.forEach((p, pi) => { if (dead.has(pi)) return; if (changes.has(pi)) out.push(...keepSegs(p, changes.get(pi))); else out.push(p); }); S.paths = out.map(dedupe); clearSel(); changed(); toast(`Removed ${removed} doubled-up piece${removed > 1 ? 's' : ''}`); }
 $('gapBtn').onclick = closeGapsAll; $('shortBtn').onclick = removeShort; $('overlapBtn').onclick = removeOverlaps;
 // ---------- export ----------
-function buildOut() { if (window.HH) HH.sync(); if (window.TB) TB.sync(); return LZ.build({ name: S.name, art: etch(), cut: cutActive() ? cuts() : [], widthMm: S.widthMm, burn: { engrave: burnOf('engrave'), cut: burnOf('cut') }, smax: smax(), lineMm: S.lineMm, pxmm: 10, sheet: S.sheet && S.sheet.on ? S.sheet : null }); }
+function buildOut() { if (window.HH) HH.sync(); if (window.TB) TB.sync(); return LZ.build({ name: S.name, art: etch(), cut: cutActive() ? cuts() : [], widthMm: S.widthMm, burn: { engrave: burnOf('engrave'), cut: burnOf('cut') }, smax: smax(), lineMm: S.lineMm, pxmm: 10, sheet: S.sheet && S.sheet.on ? S.sheet : null, border: borderMm() }); }
 // ---------- Sheet: blank size, margin, copies ----------
 const designFrame = () => LZ.frame(etch(), cutActive() ? cuts() : [], S.widthMm);
-function sheetUI() { const sh = S.sheet || (S.sheet = SHEET0()); $('shOn').checked = !!sh.on; $('shBody').hidden = !sh.on; $('shOff').hidden = !!sh.on;
+// v4.9 border round the design when no blank is set (laser 0,0 = free corner). Remembered on this device for every project.
+const BORDER0 = 10;
+function borderMm() { const v = parseFloat(localStorage.getItem('wp-border')); return v >= 0 && v <= 100 ? v : BORDER0; }
+function borderUI() { const v = borderMm(), on = !!(S.sheet && S.sheet.on); ['brdIn', 'lzBrd'].forEach(id => { const e = $(id); if (e && document.activeElement !== e) e.value = v; });
+  if ($('lzBrdRow')) $('lzBrdRow').hidden = on;
+  document.querySelectorAll('.brdhint').forEach(h => { h.textContent = on ? 'Blank on: the border is not used - 0,0 is the blank\'s bottom-left corner.' : v > 0 ? `Set your laser's zero ${f1(v)} mm below and ${f1(v)} mm left of the design. Nothing burns closer than ${f1(v)} mm to zero, so the tabs never run into the machine's edge.` : 'Border 0: the laser 0,0 is the bottom-left corner of the design itself (the tab bottoms sit right on zero).'; }); }
+['brdIn', 'lzBrd'].forEach(id => { const e = $(id); if (!e) return; e.addEventListener('change', () => { const v = parseFloat(e.value); if (!(v >= 0 && v <= 100)) { e.value = borderMm(); toast('Use a border from 0 to 100 mm'); return; } localStorage.setItem('wp-border', String(v)); borderUI(); exSummary(); lzWhat(); }); });
+function sheetUI() { borderUI(); const sh = S.sheet || (S.sheet = SHEET0()); $('shOn').checked = !!sh.on; $('shBody').hidden = !sh.on; $('shOff').hidden = !!sh.on;
   $('shW').value = sh.W; $('shH').value = sh.H; $('shM').value = sh.margin; $('shGap').value = sh.gap; $('shNx').value = sh.nx; $('shNy').value = sh.ny;
   document.querySelectorAll('[data-place]').forEach(b => b.classList.toggle('on', b.dataset.place === (sh.place === 'margin' ? 'margin' : 'centre'))); sheetPreview(); }
 function sheetPreview() { const sh = S.sheet, info = $('shInfo'), c = $('shPrev'); if (!sh || !sh.on || !c) return; const fr = designFrame();
@@ -471,7 +478,7 @@ document.querySelectorAll('[data-place]').forEach(b => b.onclick = () => { S.she
 $('shFit').onclick = () => { const fr = designFrame(); if (!fr) return; const fc = LZ.fitCount(fr, S.sheet); if (!fc.nx || !fc.ny) { toast('Even one copy is too big for this blank - make the Width smaller in Size.', 4000); return; } S.sheet.nx = fc.nx; S.sheet.ny = fc.ny; sheetUI(); saveSoon(); exSummary(); toast(`${fc.nx} × ${fc.ny} = ${fc.nx * fc.ny} copies fit`); };
 function exSummary() { sheetPreview(); const el = $('exSummary'); if (!el) return; if (!etch().length) { el.textContent = 'Open a picture first.'; return; } const k = kmm(), b = bbAll();
   const sh = S.sheet && S.sheet.on ? (() => { const fr = designFrame(); return fr ? LZ.layout(fr, S.sheet) : null; })() : null;
-  el.innerHTML = `${sh ? `<b>Sheet:</b> ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'} on a ${f1(sh.W)} × ${f1(sh.H)} mm blank, 0,0 = the blank's bottom-left corner.${sh.fits ? '' : ' <span class="warn">They don\'t fit - see Sheet.</span>'} ` : ''}Design ${f1(S.widthMm)} × ${f1(b.h * k)} mm. Files: <b>1 Engrave lines</b> (${sumOf('engrave')})${cutActive() ? ` + <b>2 Cut outside</b> (${sumOf('cut')})` : ''}, plus an SVG in mm and a read-me. All steps share the same 0,0 (bottom-left${sh ? ' of the blank' : ''}), so they line up in LaserGRBL.${cutActive() ? ' Holes and windows are cut before the outside.' : ''} The laser is switched off for every move between lines.`; }
+  el.innerHTML = `${sh ? `<b>Sheet:</b> ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'} on a ${f1(sh.W)} × ${f1(sh.H)} mm blank, 0,0 = the blank's bottom-left corner.${sh.fits ? '' : ' <span class="warn">They don\'t fit - see Sheet.</span>'} ` : ''}Design ${f1(S.widthMm)} × ${f1(b.h * k)} mm. Files: <b>1 Engrave lines</b> (${sumOf('engrave')})${cutActive() ? ` + <b>2 Cut outside</b> (${sumOf('cut')})` : ''}, plus an SVG in mm and a read-me. All steps share the same 0,0 (bottom-left${sh ? ' of the blank' : borderMm() > 0 ? `, ${f1(borderMm())} mm below and left of the design` : ''}), so they line up in LaserGRBL.${cutActive() ? ' Holes and windows are cut before the outside.' : ''} The laser is switched off for every move between lines.`; }
 const mimeOf = n => /\.svg$/.test(n) ? 'image/svg+xml' : 'text/plain';
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 8000); }
 function listFiles(o, how) { $('exOut').innerHTML = `<div class="ok">${esc(how)}</div><ul>${o.files.map(f => `<li>${esc(f.name)}</li>`).join('')}</ul><div class="hint">Design area ${f1(o.fr.W)} × ${f1(o.fr.H)} mm, 0,0 at the bottom-left. In LaserGRBL: File › Open File › pick a .nc › Start. Do step 1 then step 2 without moving anything.</div>`; }
@@ -493,7 +500,7 @@ async function saveSeparate() { let o; try { o = buildOut(); } catch (e) { toast
   listFiles(o, `${o.files.length} files saved to your Downloads folder. If the browser asks to allow multiple downloads, tap Allow.`); }
 function lzWhat() { const el = $('lzWhat'); if (!el) return; if (!etch().length) { el.textContent = 'Open a picture first.'; return; } const k = kmm(), b = bbAll(), sh = S.sheet && S.sheet.on ? (() => { const fr = designFrame(); return fr ? LZ.layout(fr, S.sheet) : null; })() : null;
   el.innerHTML = `<b>${esc(S.name || 'Untitled')}</b> · ${f1(S.widthMm)} × ${f1(b.h * k)} mm${sh ? ` · ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'} on a ${f1(sh.W)} × ${f1(sh.H)} mm blank` : ''} · ${cutActive() ? `${cuts().length} cut line${cuts().length > 1 ? 's' : ''}` : 'no cut'}`;
-  $('lzSheetInfo').innerHTML = sh ? `Blank on: ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'}, 0,0 = the blank's bottom-left corner.${sh.fits ? '' : ' <span class="warn">They don\'t fit.</span>'}` : 'Blank off: the laser 0,0 is the bottom-left corner of the design.';
+  $('lzSheetInfo').innerHTML = sh ? `Blank on: ${sh.n} cop${sh.n > 1 ? 'ies' : 'y'}, 0,0 = the blank's bottom-left corner.${sh.fits ? '' : ' <span class="warn">They don\'t fit.</span>'}` : (borderMm() > 0 ? `Blank off: ${f1(borderMm())} mm border - set your laser's zero ${f1(borderMm())} mm below and left of the design.` : 'Blank off: the laser 0,0 is the bottom-left corner of the design.'); borderUI();
   $('lzMoreSum').textContent = `· S max ${smax()}${sh ? ` · blank ${sh.n}×` : ''}`; }
 function lzOpenBurn() { if (!etch().length) { toast('Open a picture first'); return; } closeMenu(); lzUI(); lzWhat(); const d = $('lzDlg'); if (d.showModal) { if (!d.open) d.showModal(); } else d.setAttribute('open', ''); }
 $('exportTop').onclick = lzOpenBurn; $('lzOpenMenu').onclick = lzOpenBurn;
@@ -540,7 +547,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Tabs for stands, sizes in mm (Menu › Add shape › Tabs)'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: 10 mm laser border, so zero is a free corner (Export › More laser settings)'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
