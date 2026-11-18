@@ -39,6 +39,20 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.0 - Clone tool
+
+New **Clone** button at the end of the editor toolbar. Copy a line, shape, cut out or hanging hole, then size, turn and move the copy, with **Reset to original**.
+
+1. Tap **Clone** in the toolbar, then tap the line, shape, cut out (tap inside it) or hanging hole you want.
+2. Tap **+ Clone**: a copy appears 5 mm down and right, picked and outlined in blue.
+3. Drag the copy to move it, drag the round **corner handle** to make it bigger or smaller, drag the **turn handle** above it to turn it (it clicks to 15° steps). Or type Width / Height mm, Size % (Keep shape ties width and height), Turn ° (⟲15° ⟳15° 90° buttons), and nudge with the arrows (0.5 / 1 / 5 / 10 mm).
+4. **Reset to original** puts the copy back exactly as it was when cloned. **Delete copy** removes it (originals can't be deleted here). **Undo** takes back each step. **Done** goes back to Select.
+
+* Size, turn and move also work on an original you pick (Reset brings it back too).
+* Copies keep their type: etch lines keep their thickness and double-line, cut outs stay inner cuts (grey), hanging holes stay true circles at their typed size (the size boxes change the diameter; holes can't be turned).
+* The outside cut line can't be cloned - it follows the design (rebuild it with Cut out › Outer cut). Changing copies never changes the mm size of the rest of the design.
+* Copies are saved in the project and in synced files. **Laser files are unchanged unless you use Clone**; copies burn exactly like the originals (etch first, holes and cut outs before the outer cut).
+
 ## v4.9 - Laser border (zero is a free corner)
 
 When no blank is set, the laser files now leave a **border** (default **10 mm**, typed in mm, remembered on this device) round the design, like Wayland Forge's page border. Every etch and cut line (and the SVGs) moves right and up by the border, so laser 0,0 is a free corner and nothing burns closer than the border to zero - the tabs no longer sit right on the machine's edge.

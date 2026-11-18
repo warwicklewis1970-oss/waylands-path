@@ -62,6 +62,7 @@
       <button data-tool="thick" class="tool" title="Make a line thicker or double"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7 H21" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3 12 H21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M3 18 H21" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg><span>Thickness</span></button>
       <button data-tool="cutout" class="tool" title="Tap inside an area to cut it out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke="#9aa0a4" stroke-width="2.6" fill="none"/><rect x="8" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.2 1.8" fill="none"/></svg><span>Cut out</span></button>
       <button data-tool="clear" class="tool" title="Tap areas (or drag a box), then clear every line inside"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6 L18 4 L20 17 L7 20 Z" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2" fill="none"/><path d="M9 10 L15 15 M15 10 L9 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Clear space</span></button>
+      <button data-tool="clone" class="tool" title="Clone: copy a line, shape or hole, then size, turn and move it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.25"/></svg><span>Clone</span></button>
     </div>
     <div id="toolOpts">
       <div data-opts="move" class="topts">Pick a tool. With no tool picked, one finger moves the picture. Two fingers always move and zoom.</div>
@@ -79,6 +80,14 @@
         <div class="t4b"><label class="chk"><input type="checkbox" id="t4dbl">Double line</label><span id="t4ddRow" class="stepper" hidden><span class="lbl2">Distance between lines</span><button id="t4ddM" aria-label="Less">−</button><input type="number" id="t4dd" class="num" inputmode="decimal" min="0.01" max="20" step="0.01" value="0.50"><button id="t4ddP" aria-label="More">+</button><span class="u">mm</span></span><button id="t4thAll">Apply to all lines</button></div></div>
       <div data-opts="cutout" class="topts t4p" hidden><div class="t4h" id="t4coHint"></div><div class="t4b"><button id="t4coGo" class="accent big2">✂ Cut out</button><button id="t4coEtch" hidden>Make etch line</button><button id="t4coOut">Outer cut…</button></div></div>
       <div data-opts="clear" class="topts t4p" hidden><div class="seg clseg"><button data-clmode="area" class="on">👆 Tap areas</button><button data-clmode="poly">📍 Points (advanced)</button></div><div class="t4h" id="t4clHint"></div><label class="clgrow"><input type="checkbox" id="t4clGrow"> Include border lines (e.g. the window frame)</label><div class="t4b"><button id="t4clNo">✕ Unselect all</button><button id="t4clBack">↶ Last point</button><button id="t4clGo" class="danger big2">🧹 Clear</button></div></div>
+      <div data-opts="clone" class="topts t4p" id="cnBox" hidden><div class="t4h" id="cnHint"></div>
+        <div class="cnacts"><button id="cnGo" class="accent">+ Clone</button><button id="cnReset">↺ Reset to original</button><button id="cnDel" class="danger">🗑 Delete copy</button><button id="cnDone">✓ Done</button></div>
+        <div id="cnEdit" hidden>
+          <div class="cnrow"><label>Width mm<input type="number" id="cnW" inputmode="decimal" min="0.1" step="0.1"></label><label>Height mm<input type="number" id="cnH" inputmode="decimal" min="0.1" step="0.1"></label><label class="chk cnlock"><input type="checkbox" id="cnLock">Keep shape</label></div>
+          <div class="cnrow"><label>Size %<input type="number" id="cnPct" inputmode="decimal" min="1" max="5000" step="1"></label><label>Turn °<input type="number" id="cnRot" inputmode="decimal" min="-360" max="360" step="1"></label><button id="cnRm" aria-label="Turn 15 degrees left">⟲15°</button><button id="cnRp" aria-label="Turn 15 degrees right">⟳15°</button><button id="cnR90" aria-label="Turn 90 degrees">90°</button></div>
+          <div class="nudge cnnudge"><span class="lbl2">Move</span><button data-cnnudge="-1,0" aria-label="Move left">◀</button><button data-cnnudge="0,-1" aria-label="Move up">▲</button><button data-cnnudge="0,1" aria-label="Move down">▼</button><button data-cnnudge="1,0" aria-label="Move right">▶</button><select id="cnStep" aria-label="Move step"><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="5">5 mm</option><option value="10">10 mm</option></select></div>
+        </div>
+      </div>
       <div data-opts="nodes" class="topts nopts" hidden>
         <div class="selinfo" id="selInfo">Tap a line to show its points</div>
         <div class="nbtns">
@@ -276,6 +285,7 @@
 <script src="js/tools4.js"></script>
 <script src="js/hole.js"></script>
 <script src="js/tabs.js"></script>
+<script src="js/clone.js"></script>
 <script src="js/sync.js"></script>
 </body>
 </html>

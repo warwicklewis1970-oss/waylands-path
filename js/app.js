@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v4.9';
+const APP_VERSION = 'v5.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -15,8 +15,8 @@ const cv = $('stage'), ctx = cv.getContext('2d');
 const toast = (msg, ms = 2600) => { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, ms); };
 const snap = () => BZ.clone(S.paths);
 function pushUndo() { undoSt.push(snap()); if (undoSt.length > 50) undoSt.shift(); redoSt = []; updUndo(); }
-function undo() { if (!undoSt.length) return; redoSt.push(snap()); S.paths = undoSt.pop(); pen = null; clearSel(); changed(); if (window.T4) T4.reset(); }
-function redo() { if (!redoSt.length) return; undoSt.push(snap()); S.paths = redoSt.pop(); pen = null; clearSel(); changed(); if (window.T4) T4.reset(); }
+function undo() { if (!undoSt.length) return; const cur = snap(), prev = undoSt.pop(); if (prev._w != null) { cur._w = S.widthMm; S.widthMm = prev._w; syncInputs(); } redoSt.push(cur); S.paths = prev; pen = null; clearSel(); changed(); if (window.T4) T4.reset(); if (window.CN) CN.afterUndo(); }
+function redo() { if (!redoSt.length) return; const cur = snap(), nxt = redoSt.pop(); if (nxt._w != null) { cur._w = S.widthMm; S.widthMm = nxt._w; syncInputs(); } undoSt.push(cur); S.paths = nxt; pen = null; clearSel(); changed(); if (window.T4) T4.reset(); if (window.CN) CN.afterUndo(); }
 function updUndo() { $('undoBtn').disabled = !undoSt.length; $('redoBtn').disabled = !redoSt.length; }
 const etch = () => S.paths.filter(p => !p.cut), cuts = () => S.paths.filter(p => p.cut);
 const bbAll = () => BZ.bbox(S.paths);
@@ -82,6 +82,7 @@ function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.widt
   if (window.T4) T4.paint(px);
   if (window.HH) HH.paint(px);
   if (window.TB) TB.paint(px);
+  if (window.CN) CN.paint(px);
   if (overlay && overlay.box) { const [a, b] = overlay.box; ctx.fillStyle = 'rgba(25,113,194,0.08)'; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = px; ctx.setLineDash([5 * px, 4 * px]); ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.setLineDash([]); }
   if (overlay && overlay.pt) { ctx.fillStyle = '#e8590c'; ctx.beginPath(); ctx.arc(overlay.pt[0], overlay.pt[1], 5 * px, 0, 7); ctx.fill(); } }
 const isSel = (pi, j) => sel.has(pi + ':' + j);
@@ -333,7 +334,7 @@ function penDrag(g, u) { const p = S.paths[pen.pi], nd = p.n[g.j], dx = u[0] - n
 function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.length < 2) S.paths.splice(pen.pi, 1); pen = null; changed(); }
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
-function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.CN) CN.onTool(t); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); draw(); }
 document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool));
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
@@ -369,6 +370,7 @@ cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => 
   if (gest && gest.pid != null && e.pointerId !== gest.pid) return; cancelGesture(); pinch = null; });
 cv.addEventListener('wheel', e => { e.preventDefault(); const p = cvPt(e), k = Math.exp(-e.deltaY * 0.0015), ns = Math.max(0.05, Math.min(80, view.s * k)), kk = ns / view.s; view.tx = p[0] - (p[0] - view.tx) * kk; view.ty = p[1] - (p[1] - view.ty) * kk; view.s = ns; draw(); }, { passive: false });
 function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap: null };
+  if (window.CN && tool === 'clone') return CN.down(e, p, u, base); // v5.0 clone
   if (window.TB && tool === 'shapes' && TB.on) return TB.down(e, p, u, base); // v4.8 tabs
   if (window.HH && tool === 'shapes' && HH.on) return HH.down(e, p, u, base); // v4.7 hanging hole
   if (window.HH && tool === 'cutout' && HH.hitHole(u, tolPx(e) * 0.6) >= 0) return HH.down(e, p, u, base); // drag a hole as a whole circle
@@ -386,6 +388,7 @@ function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap
   const sh = hitPath(u, tolU); if (sh && act.has(sh.pi)) return Object.assign(base, { kind: 'seg', h: sh, snap: snap() });
   return Object.assign(base, { kind: 'box', h: sh }); }
 function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.hypot(p[0] - g.p0[0], p[1] - g.p0[1]) < (e.pointerType === 'mouse' ? 3 : 7)) return; g.moved = true;
+  if (g.cn) { CN.move(g, p, u, e); return; }
   if (g.tb) { TB.move(g, p, u, e); return; }
   if (g.hh) { HH.move(g, p, u, e); return; }
   if (g.t2) { T2.move(g, p, u, e); return; }
@@ -399,6 +402,7 @@ function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.
   if (g.kind === 'seg') { S.paths = BZ.clone(g.snap); const p2 = S.paths[g.h.pi]; BZ.bend(p2, g.h.k, g.h.t, u[0] - g.u0[0], u[1] - g.u0[1]); act = new Set([g.h.pi]); draw(); return; }
   if (g.kind === 'box') { overlay = { box: [g.u0, u] }; draw(); } }
 function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
+  if (g.cn) { CN.up(g, e); return; }
   if (g.tb) { TB.up(g, e); return; }
   if (g.hh) { HH.up(g, e); return; }
   if (g.t2) { T2.up(g, e); return; }
@@ -415,7 +419,7 @@ function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
     lastTapT = now; lastTapU = g.u0; overlay = { pt: g.h.pt }; updSel(); draw(); setTimeout(() => { if (overlay && overlay.pt) { overlay = null; draw(); } }, 900); return; }
   if (g.kind === 'box') { if (!g.moved) { if (g.h) { act = new Set([g.h.pi]); sel.clear(); lastTap = { pi: g.h.pi, k: g.h.k, t: g.h.t }; lastTapT = Date.now(); lastTapU = g.u0; } else clearSel(); updSel(); draw(); return; } const a = g.u0, b = toU(...cvPt(e)), x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
     sel.clear(); act.clear(); S.paths.forEach((p, pi) => p.n.forEach((nd, j) => { if (nd.x >= x0 && nd.x <= x1 && nd.y >= y0 && nd.y <= y1) { sel.add(pkey(pi, j)); act.add(pi); } })); lastTap = null; updSel(); draw(); } }
-function cancelGesture() { if (!gest) return; if (gest.t4 && window.T4) T4.cancelG(gest); if (gest.restore && gest.moved) gest.restore(); if (gest.snap && gest.moved) { S.paths = gest.snap; } if (gest.kind === 'pan' || gest.kind === 'tap' || gest.t2 === 'pan' || gest.t2 === 'tap') { view.tx = gest.tx; view.ty = gest.ty; } gest = null; overlay = null; draw(); }
+function cancelGesture() { if (!gest) return; if (gest.t4 && window.T4) T4.cancelG(gest); if (gest.restore && gest.moved) gest.restore(); if (gest.snap && gest.moved) { S.paths = gest.snap; if (gest.snap._w != null) { S.widthMm = gest.snap._w; syncInputs(); } } if (gest.kind === 'pan' || gest.kind === 'tap' || gest.t2 === 'pan' || gest.t2 === 'tap') { view.tx = gest.tx; view.ty = gest.ty; } gest = null; overlay = null; draw(); }
 window.addEventListener('keydown', e => { if (/input|select|textarea/i.test((e.target.tagName || ''))) return; const z = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
   if (z && !e.shiftKey) { e.preventDefault(); undo(); return; } if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (z && e.shiftKey))) { e.preventDefault(); redo(); return; }
   if (tool === 'pen' && (e.key === 'Enter' || e.key === 'Escape')) { penDone(); return; }
@@ -547,7 +551,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: 10 mm laser border, so zero is a free corner (Export › More laser settings)'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Clone tool - copy a line, shape or hole, then size, turn and move it'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
