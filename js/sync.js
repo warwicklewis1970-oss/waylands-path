@@ -14,6 +14,9 @@
   const lastSig = new Map();
   // ---------- projects on this device (IndexedDB) ----------
   async function idx() { return (await DB.get(IDX)) || []; }
+  // v5.1 a name no other project uses: "dog" -> "dog 2" -> "dog 3" (kept within 40 characters)
+  async function uniqueName(name, pid) { const base = String(name || 'Untitled').trim().slice(0, 40) || 'Untitled', used = new Set((await idx()).filter(x => x.id !== pid).map(x => String(x.name || '').toLowerCase()));
+    if (!used.has(base.toLowerCase())) return base; for (let i = 2; i < 1000; i++) { const suf = ' ' + i, n = base.slice(0, 40 - suf.length).trim() + suf; if (!used.has(n.toLowerCase())) return n; } return base; }
   async function setIdx(a) { a.sort((p, q) => q.updated - p.updated); await DB.put(IDX, a); }
   async function getProj(id) { return DB.get(KEY(id)); }
   async function putProj(x, quiet) { await DB.put(KEY(x.id), x); const a = await idx(), i = a.findIndex(q => q.id === x.id), row = { id: x.id, name: x.name, updated: x.updated, size: sizeOf(x.state) };
@@ -29,13 +32,14 @@
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const when = t => new Date(t).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   async function listUI() { const box = $('projList'); if (!box) return; const a = await idx(); $('projCount').textContent = a.length ? `(${a.length})` : '';
-    box.innerHTML = a.length ? a.map(x => `<div class="prow"><button class="popen" data-pa="open" data-id="${x.id}"><b>${esc(x.name)}</b><small>${when(x.updated)} · ${mb(x.size || 0)}${x.size > PIC_LIMIT ? ' · picture stays on this device' : ''}</small></button><button class="pico" data-pa="ren" data-id="${x.id}" title="Rename" aria-label="Rename">✎</button><button class="pico del" data-pa="del" data-id="${x.id}" title="Delete" aria-label="Delete">🗑</button></div>`).join('')
+    const cnt = {}; a.forEach(x => { const k = String(x.name || '').toLowerCase(); cnt[k] = (cnt[k] || 0) + 1; });
+    box.innerHTML = a.length ? a.map(x => `<div class="prow"><button class="popen" data-pa="open" data-id="${x.id}"><b>${esc(x.name)}</b><small>${when(x.updated)} · ${mb(x.size || 0)}${cnt[String(x.name || '').toLowerCase()] > 1 ? ' · <span class="warn">same name as another project - tap ✎ to rename</span>' : ''}${x.size > PIC_LIMIT ? ' · picture stays on this device' : ''}</small></button><button class="pico" data-pa="ren" data-id="${x.id}" title="Rename" aria-label="Rename">✎</button><button class="pico del" data-pa="del" data-id="${x.id}" title="Delete" aria-label="Delete">🗑</button></div>`).join('')
       : '<div class="pnone">No saved projects yet - open a line drawing to start one. Every project is saved here as you work.</div>';
     const big = a.filter(x => x.size > PIC_LIMIT).map(x => `"${x.name}"`); sy.note = big.length ? `${big.join(', ')} ${big.length > 1 ? 'are' : 'is'} big - lines and settings sync, the picture stays on this device.` : '';
     statusUI(); }
   document.addEventListener('click', async e => { const b = e.target.closest && e.target.closest('[data-pa]'); if (!b || !$('projList').contains(b)) return; const id = b.dataset.id, x = await getProj(id); if (!x) { listUI(); return; }
     if (b.dataset.pa === 'open') { open(id).catch(er => toast('Could not open: ' + er.message)); return; }
-    if (b.dataset.pa === 'ren') { const n = prompt('Project name', x.name); if (!n || !n.trim()) return; x.name = n.trim().slice(0, 40); x.state.name = x.name; x.updated = Date.now(); x.state.saved = x.updated; await putProj(x); if (S.pid === id) { S.name = x.name; syncInputs(); } const l = await DB.get('last'); if (l && l.pid === id) { l.name = x.name; await DB.put('last', l); } listUI(); refreshHome(); return; }
+    if (b.dataset.pa === 'ren') { const n = prompt('Project name', x.name); if (!n || !n.trim()) return; const want = n.trim().slice(0, 40); x.name = await uniqueName(want, id); if (x.name !== want) toast(`"${want}" is already a project, so this one is "${x.name}"`, 3500); x.state.name = x.name; x.updated = Date.now(); x.state.saved = x.updated; await putProj(x); if (S.pid === id) { S.name = x.name; syncInputs(); } const l = await DB.get('last'); if (l && l.pid === id) { l.name = x.name; await DB.put('last', l); } listUI(); refreshHome(); return; }
     if (b.dataset.pa === 'del') { if (!confirm(`Delete "${x.name}"?${sm().connected ? ' It is deleted from your other devices too.' : ''} This cannot be undone.`)) return; await delProj(id); if (S.pid === id) S.pid = null; markDel(id); listUI(); refreshHome(); toast('Deleted ' + x.name); } });
   // ---------- Google Drive sync ----------
   const sy = { tok: null, exp: 0, busy: null, again: false, state: 'off', err: '', t: null, note: '' };
@@ -126,6 +130,6 @@
   window.addEventListener('online', () => syncSoon(1)); window.addEventListener('offline', () => { sy.state = 'offline'; statusUI(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncSoon(1); });
   setInterval(statusUI, 30000);
-  window.PJ = { saved, init, open, listUI, idx, getProj, putProj, delProj, newId, background: () => syncNow(false), syncNow, syncSoon, sm, sy, statusUI, statusText, PFX, PIC_LIMIT };
+  window.PJ = { saved, init, open, listUI, idx, uniqueName, getProj, putProj, delProj, newId, background: () => syncNow(false), syncNow, syncSoon, sm, sy, statusUI, statusText, PFX, PIC_LIMIT };
   init();
 })();

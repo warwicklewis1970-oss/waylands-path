@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.0';
+const APP_VERSION = 'v5.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -162,7 +162,9 @@ function loadImage(file) { return new Promise((res, rej) => { const u = URL.crea
 function setSource(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => { srcEl = im; const c = document.createElement('canvas'); c.width = S.src.w; c.height = S.src.h; const g = c.getContext('2d'); g.drawImage(im, 0, 0, S.src.w, S.src.h);
   const d = g.getImageData(0, 0, S.src.w, S.src.h); srcImg = { data: d.data, w: S.src.w, h: S.src.h }; res(); }; im.onerror = rej; im.src = url; }); }
 function startProject(name) { const keep = { widthMm: S.widthMm, lineMm: S.lineMm, cutOff: S.cutOff, cutTight: S.cutTight, gapMm: S.gapMm, shortMm: S.shortMm, showPhoto: S.showPhoto, trace: Object.assign({}, S.trace), sheet: Object.assign(SHEET0(), S.sheet || {}) };
-  S = Object.assign(DEFAULTS(), keep, { name, pid: window.PJ ? PJ.newId() : null }); undoSt = []; redoSt = []; clearSel(); pen = null; syncInputs(); }
+  S = Object.assign(DEFAULTS(), keep, { name, pid: window.PJ ? PJ.newId() : null }); undoSt = []; redoSt = []; clearSel(); pen = null; syncInputs(); uniqueSoon(); }
+// v5.1 two projects never share a name in My projects (opening the same picture twice gives "dog 2", "dog 3" ...)
+function uniqueSoon() { if (!window.PJ || !PJ.uniqueName) return; const pid = S.pid, n0 = S.name; PJ.uniqueName(n0, pid).then(n => { if (S.pid === pid && S.name === n0 && n !== n0) { S.name = n; syncInputs(); saveSoon(); } }).catch(() => {}); }
 ['homeFile', 'stageFile', 'panelFile'].forEach(id => $(id).addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openFile(f); }));
 // ---------- inputs ----------
 function syncInputs() { $('nameBtn').textContent = (S.name || 'Untitled') + ' ✎'; $('detail').value = S.trace.detail; $('detailOut').textContent = S.trace.detail; $('corners').value = S.trace.corners; $('cornersOut').textContent = S.trace.corners;
@@ -180,7 +182,7 @@ const numIn = (id, key, lo, hi, after) => $(id).addEventListener('change', e => 
 numIn('widthMm', 'widthMm', 5, 2000, () => { updStats(); exSummary(); }); numIn('lineMm', 'lineMm', 0.05, 5, exSummary); numIn('cutOff', 'cutOff', 0, 50); $('cutTight').addEventListener('input', e => { S.cutTight = +e.target.value; $('cutTightOut').textContent = S.cutTight; saveSoon(); }); numIn('gapMm', 'gapMm', 0.1, 20); numIn('shortMm', 'shortMm', 0.1, 100);
 $('cutOn').addEventListener('change', e => { S.cutOn = e.target.checked; cutInfo(); draw(); saveSoon(); exSummary(); });
 $('makeCutBtn').onclick = makeCut;
-$('nameBtn').onclick = () => { const n = prompt('Project name (used in the file names)', S.name); if (n && n.trim()) { S.name = n.trim().slice(0, 40); syncInputs(); saveSoon(); } };
+$('nameBtn').onclick = async () => { const n = prompt('Project name (used in the file names)', S.name); if (n && n.trim()) { let v = n.trim().slice(0, 40); if (window.PJ && PJ.uniqueName) { const u = await PJ.uniqueName(v, S.pid); if (u !== v) toast(`"${v}" is already a project, so this one is "${u}"`, 3500); v = u; } S.name = v; syncInputs(); saveSoon(); } };
 function openSec(id, show = true) { if (show) openMenu(); document.querySelectorAll('#panel details[name=acc]').forEach(d => { d.open = d.id === id; }); }
 // ☰ Menu: everything that is not a drawing tool lives in a sheet that is closed by default
 function openMenu(id) { document.body.classList.add('menuOpen'); if (id) { document.querySelectorAll('#panel details[name=acc]').forEach(d => { d.open = d.id === id; }); const el = $(id); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 30); } }
@@ -449,7 +451,9 @@ function removeOverlaps() { const tolU = Math.max(S.lineMm * 0.6 / kmm(), 1.5 / 
   if (!removed) { toast('No overlapping lines found'); return; } pushUndo(); const out = []; S.paths.forEach((p, pi) => { if (dead.has(pi)) return; if (changes.has(pi)) out.push(...keepSegs(p, changes.get(pi))); else out.push(p); }); S.paths = out.map(dedupe); clearSel(); changed(); toast(`Removed ${removed} doubled-up piece${removed > 1 ? 's' : ''}`); }
 $('gapBtn').onclick = closeGapsAll; $('shortBtn').onclick = removeShort; $('overlapBtn').onclick = removeOverlaps;
 // ---------- export ----------
-function buildOut() { if (window.HH) HH.sync(); if (window.TB) TB.sync(); return LZ.build({ name: S.name, art: etch(), cut: cutActive() ? cuts() : [], widthMm: S.widthMm, burn: { engrave: burnOf('engrave'), cut: burnOf('cut') }, smax: smax(), lineMm: S.lineMm, pxmm: 10, sheet: S.sheet && S.sheet.on ? S.sheet : null, border: borderMm() }); }
+// v5.1 export date + time for the file names (this device's clock), e.g. "2026-11-19 2300"
+const exportStamp = (d = new Date()) => { const z = v => String(v).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}${z(d.getMinutes())}`; };
+function buildOut() { if (window.HH) HH.sync(); if (window.TB) TB.sync(); return LZ.build({ name: S.name, stamp: exportStamp(), art: etch(), cut: cutActive() ? cuts() : [], widthMm: S.widthMm, burn: { engrave: burnOf('engrave'), cut: burnOf('cut') }, smax: smax(), lineMm: S.lineMm, pxmm: 10, sheet: S.sheet && S.sheet.on ? S.sheet : null, border: borderMm() }); }
 // ---------- Sheet: blank size, margin, copies ----------
 const designFrame = () => LZ.frame(etch(), cutActive() ? cuts() : [], S.widthMm);
 // v4.9 border round the design when no blank is set (laser 0,0 = free corner). Remembered on this device for every project.
@@ -551,7 +555,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Clone tool - copy a line, shape or hole, then size, turn and move it'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Break removes a section, Clone remembers your last 3, files named with date and time'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;

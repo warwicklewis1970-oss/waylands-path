@@ -1,4 +1,4 @@
-// Waylands Path v5.0 - Clone tool: tap a line, shape, cut out or hanging hole, Clone it, then size, turn and move the copy.
+// Waylands Path v5.1 - Clone tool: tap a line, shape, cut out or hanging hole, Clone it, then size, turn and move the copy.
 // Every picked item keeps p.xf = { g, o, b, c, sx, sy, r, dx, dy, sig, copy } on its path(s):
 //   o = geometry when cloned (or when first changed here) - "Reset to original" goes back to it exactly
 //   b = geometry the current size/turn/move is worked out from (never edited, so no drift), c = its centre
@@ -51,8 +51,49 @@ window.CN = (() => {
     for (const q of copies) { S.paths.push(q); q.xf = { g, o: geomOf(q), b: geomOf(q), sx: 1, sy: 1, r: 0, dx: 0, dy: 0, copy: true }; }
     if (copies.some(q => q.hole) && window.HH) HH.sync();
     const bb = bbOf(copies, k0); for (const q of copies) { q.xf.c = [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2]; q.xf.sig = sigOf(q); }
-    if (copies.some(q => q.cut)) S.cutOn = true; choose(copies); commit(k0);
+    if (copies.some(q => q.cut)) S.cutOn = true; try { remember(list, k0); } catch (e) { /* the copy is made even if it can't be remembered */ } choose(copies); commit(k0);
     toast(`Copy made, 5 mm down and right${copies[0].hole ? ` (Ø ${copies[0].hole.d} mm hole)` : copies[0].cut ? ' (cut out)' : ''}. Drag it, or use the boxes below.`, 3200); }
+  // ---------- v5.1 recent clones: the last 3 things you cloned, kept on this device (any project) ----------
+  // Stored in mm from the shape's own centre, with its type (etch / cut out / hole, thickness, double line), so a recent
+  // clone placed on another design is the same size in mm and burns the same way as the one you cloned.
+  const RKEY = 'wp-cnRecent', RMAX = 3, DROP = ['n', 'xf', 'tabs', 'tabBase', '_tsig'];
+  function recents() { try { const a = JSON.parse(localStorage.getItem(RKEY) || '[]'); return Array.isArray(a) ? a.filter(r => r && Array.isArray(r.items) && r.items.length) : []; } catch (e) { return []; } }
+  function remember(list, k) { const bb = bbOf(list.map(p => ({ n: p.n, z: p.z, hole: p.hole })), k); if (!bb) return; const cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, m = v => Math.round(v * 1e4) / 1e4;
+    const mp = (x, y) => [m((x - cx) * k), m((y - cy) * k)];
+    const items = list.map(p => { const props = {}; for (const key of Object.keys(p)) if (!DROP.includes(key)) props[key] = JSON.parse(JSON.stringify(p[key]));
+      if (p.hole) { const q = mp(p.hole.cx, p.hole.cy); props.hole = Object.assign({}, p.hole, { cx: q[0], cy: q[1] }); return { props }; }
+      return { props, n: p.n.map(nd => { const q = mp(nd.x, nd.y), o = { x: q[0], y: q[1] }; if (nd.i) o.i = mp(nd.i[0], nd.i[1]); if (nd.o) o.o = mp(nd.o[0], nd.o[1]); if (nd.s != null) o.s = nd.s; return o; }) }; });
+    const rec = { at: Date.now(), w: m(bb.w * k), h: m(bb.h * k), label: describe(list), items }, key = JSON.stringify(items);
+    let all = recents().filter(r => JSON.stringify(r.items) !== key); all.unshift(rec); all = all.slice(0, RMAX);
+    try { localStorage.setItem(RKEY, JSON.stringify(all)); } catch (e) { try { localStorage.setItem(RKEY, JSON.stringify([rec])); } catch (e2) { /* too big to keep - the clone itself still worked */ } }
+    recentsRow(true); }
+  function placeRecent(idx) { const rec = recents()[idx]; if (!rec) return; const k0 = begin(), k = k0, r = cv.getBoundingClientRect(), c = toU(r.width / 2, r.height / 2), g = newG();
+    const U = q => [c[0] + q[0] / k, c[1] + q[1] / k];
+    const copies = rec.items.map(it => { const q = JSON.parse(JSON.stringify(it.props));
+      if (q.hole) { const u = U([q.hole.cx, q.hole.cy]); q.hole.cx = u[0]; q.hole.cy = u[1]; q.z = true; q.n = window.HH ? HH.circle(u[0], u[1], HH.pathR(q.hole) / k) : []; }
+      else q.n = it.n.map(nd => { const u = U([nd.x, nd.y]); return BZ.node(u[0], u[1], nd.i ? U(nd.i) : null, nd.o ? U(nd.o) : null, nd.s); });
+      return q; });
+    for (const q of copies) { S.paths.push(q); q.xf = { g, o: geomOf(q), b: geomOf(q), sx: 1, sy: 1, r: 0, dx: 0, dy: 0, copy: true }; }
+    if (copies.some(q => q.hole) && window.HH) HH.sync();
+    for (const q of copies) q.xf.o = q.xf.b = geomOf(q);
+    const bb = bbOf(copies, k0); for (const q of copies) { q.xf.c = [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2]; q.xf.sig = sigOf(q); }
+    if (copies.some(q => q.cut)) S.cutOn = true; choose(copies); commit(k0); requestAnimationFrame(seen);
+    toast(`Recent clone placed in the middle of the screen (${f1(rec.w)} × ${f1(rec.h)} mm). Drag it, or use the boxes below.`, 3500); }
+  function thumb(rec, cvs) { const g = cvs.getContext('2d'), W = cvs.width, H = cvs.height; g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; const grow = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+    for (const it of rec.items) { if (it.props.hole) { const h = it.props.hole, R = h.d / 2; grow(h.cx - R, h.cy - R); grow(h.cx + R, h.cy + R); } else for (const q of BZ.flatten({ n: it.n.map(nd => BZ.node(nd.x, nd.y, nd.i || null, nd.o || null, nd.s)), z: it.props.z }, 0.2)) grow(q[0], q[1]); }
+    if (!isFinite(x0)) return; const sc = Math.min((W - 10) / Math.max(x1 - x0, 1e-6), (H - 10) / Math.max(y1 - y0, 1e-6)), ox = (W - (x1 - x0) * sc) / 2 - x0 * sc, oy = (H - (y1 - y0) * sc) / 2 - y0 * sc;
+    g.lineWidth = 1.6; g.lineJoin = g.lineCap = 'round';
+    for (const it of rec.items) { g.strokeStyle = it.props.cut ? '#868e96' : '#1971c2'; g.beginPath();
+      if (it.props.hole) { const h = it.props.hole; g.arc(h.cx * sc + ox, h.cy * sc + oy, Math.max(1.5, h.d / 2 * sc), 0, Math.PI * 2); }
+      else BZ.flatten({ n: it.n.map(nd => BZ.node(nd.x, nd.y, nd.i || null, nd.o || null, nd.s)), z: it.props.z }, 0.2).forEach((q, i) => i ? g.lineTo(q[0] * sc + ox, q[1] * sc + oy) : g.moveTo(q[0] * sc + ox, q[1] * sc + oy));
+      if (it.props.z && !it.props.hole) g.closePath(); g.stroke(); } }
+  let rowKey = null;
+  function recentsRow(force) { const box = $('cnRecent'); if (!box) return; const all = recents(), key = JSON.stringify(all.map(r => r.at)); if (!force && key === rowKey) return; rowKey = key;
+    box.hidden = !all.length; const row = $('cnRecentRow'); row.innerHTML = '';
+    all.forEach((rec, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'cnrec'; b.dataset.cnrec = String(i); b.title = `Place a copy: ${rec.label}`;
+      const cvs = document.createElement('canvas'); cvs.width = 96; cvs.height = 64; b.appendChild(cvs); const t = document.createElement('span'); t.textContent = `${f1(rec.w)} × ${f1(rec.h)} mm`; b.appendChild(t);
+      b.onclick = () => placeRecent(i); row.appendChild(b); try { thumb(rec, cvs); } catch (e) { /* thumbnail only */ } }); }
   function change(fn, msg) { const list = live(); if (!list.length) { toast('Tap a line, shape or hole first'); return; } const k0 = begin(); C.g = prep(list); const xf = list[0].xf, v = { sx: xf.sx, sy: xf.sy, r: xf.r, dx: xf.dx, dy: xf.dy };
     if (fn(v, k0, list) === false) { undoSt.pop(); updUndo(); panel(); return; } for (const p of list) Object.assign(p.xf, v); apply(list); commit(k0); if (msg) toast(msg); }
   function reset() { const list = live(); if (!list.length) return; if (!list.some(p => p.xf)) { toast('Nothing to reset - it has not been changed'); return; } const k0 = begin();
@@ -100,12 +141,12 @@ window.CN = (() => {
     undoSt.push(g.snap); if (undoSt.length > 50) undoSt.shift(); redoSt = []; changed({ keepSel: true }); panel(); draw(); }
   // ---------- panel ----------
   function describe(list) { const p = list[0]; if (p.hole) return `hanging hole Ø ${p.hole.d} mm${p.cut ? ' (cut out)' : ''}`; if (p.cut) return 'cut out (grey - cut before the outside)'; return list.length > 1 ? `etch line (${list.length} pieces)` : p.z ? 'closed etch shape' : 'etch line'; }
-  function panel() { const box = $('cnBox'); if (!box || tool !== 'clone') return; const list = live(); if (list.length !== C.sel.length) C.sel = list; const ed = $('cnEdit'); if (ed) { const was = ed.hidden; ed.hidden = !list.length; if (was && list.length) requestAnimationFrame(seen); } const fr = list.length ? frame() : null, xf = list[0] && list[0].xf, set = (id, v) => { const el = $(id); if (el && !(el._typing && document.activeElement === el)) el.value = v; };
+  function panel() { const box = $('cnBox'); if (!box || tool !== 'clone') return; recentsRow(); const list = live(); if (list.length !== C.sel.length) C.sel = list; { const rb = $('cnRecent'); if (rb) rb.hidden = !!list.length || !recents().length; } const ed = $('cnEdit'); if (ed) { const was = ed.hidden; ed.hidden = !list.length; if (was && list.length) requestAnimationFrame(seen); } const fr = list.length ? frame() : null, xf = list[0] && list[0].xf, set = (id, v) => { const el = $(id); if (el && !(el._typing && document.activeElement === el)) el.value = v; };
     const isCopy = !!(list.length && list.every(p => p.xf && p.xf.copy)), changedOne = !!(xf && (xf.sx !== 1 || xf.sy !== 1 || xf.r || xf.dx || xf.dy || sigOf(list[0]) !== (list[0].hole ? `${xf.o.cx},${xf.o.cy},${xf.o.d}` : JSON.stringify(xf.o))));
     ['cnGo', 'cnW', 'cnH', 'cnPct', 'cnRot', 'cnRm', 'cnRp', 'cnR90'].forEach(id => { const el = $(id); if (el) el.disabled = !list.length; }); document.querySelectorAll('[data-cnnudge]').forEach(b => b.disabled = !list.length);
     $('cnReset').disabled = !changedOne; $('cnDel').disabled = !isCopy; const hole = list.length && list.every(p => p.hole); ['cnRot', 'cnRm', 'cnRp', 'cnR90'].forEach(id => { const el = $(id); if (el && hole) el.disabled = true; });
     $('cnLock').checked = C.lock || !!hole; $('cnLock').disabled = !!hole; $('cnStep').value = String(C.step);
-    if (!list.length) { $('cnHint').innerHTML = '<b>Clone:</b> tap a line, shape, cut out or hanging hole to pick it, then tap <b>+ Clone</b>. Two fingers move or zoom the picture.'; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
+    if (!list.length) { $('cnHint').innerHTML = '<b>Clone:</b> tap a line, shape, cut out or hanging hole to pick it, then tap <b>+ Clone</b>.' + (recents().length ? ' Or tap one of your <b>Recent clones</b> below to place it again.' : '') + ' Two fingers move or zoom the picture.'; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
     const k = kmm(), bb = bbOf(list, k), sx = xf ? xf.sx : 1, sy = xf ? xf.sy : 1, W = bb.w * Math.abs(sx) * k, H = bb.h * Math.abs(sy) * k;
     set('cnW', hole ? r3(list[0].hole.d) : f1(W)); set('cnH', hole ? r3(list[0].hole.d) : f1(H)); set('cnPct', Math.round(Math.abs(sx) * 1000) / 10); set('cnRot', xf ? xf.r : 0);
     $('cnHint').innerHTML = `<b>${isCopy ? 'Copy' : 'Picked'}:</b> ${describe(list)}. Drag it to move · drag <b>◢</b> to size${hole ? ' (holes stay round)' : ' · drag <b>⟳</b> to turn'}. Or type below.${isCopy ? '' : ' Tap <b>+ Clone</b> to copy it.'}`; }
@@ -130,5 +171,5 @@ window.CN = (() => {
     $('cnStep').onchange = () => { C.step = +$('cnStep').value || 1; localStorage.setItem('wp-cnStep', String(C.step)); };
     document.querySelectorAll('[data-cnnudge]').forEach(b => b.onclick = () => { const [x, y] = b.dataset.cnnudge.split(',').map(Number); nudge(x, y); }); panel(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  return { C, down, move, up, paint, panel, onTool, afterUndo, doClone, reset, delCopy, setW, setPct, setRot, nudge, pick, choose, frame, isOuter };
+  return { C, down, move, up, paint, panel, onTool, afterUndo, doClone, recents, placeRecent, remember, reset, delCopy, setW, setPct, setRot, nudge, pick, choose, frame, isOuter };
 })();

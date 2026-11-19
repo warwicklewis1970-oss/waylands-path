@@ -46,7 +46,7 @@ window.T4 = (() => {
   function clipAll(list, inside, stepU, minU) { let n = 0; [...list].sort((a, b) => b - a).forEach(pi => { const r = clip(S.paths[pi], inside, stepU, minU); if (r) { replacePath(pi, r); n++; } }); return n; }
   const nearBox = (pi, x0, y0, x1, y1) => { const bb = BZ.bbox([S.paths[pi]]); return bb && !(bb.x1 < x0 || bb.x0 > x1 || bb.y1 < y0 || bb.y0 > y1); };
   // ---------- state ----------
-  const SL = { list: [], merged: null, mode: null, a: null, b: null, plan: null }, PP = { pi: -1, lastT: 0, lastU: null }, DR = { pts: null }, BR = { a: null, b: null, plan: null }, RB = { px: 22, mode: 'all', at: null }, TH = { pi: -1, list: null }, CO = { region: null, sel: -1 }, CL = { mode: 'area', regs: [], pts: [], grow: false, box: null };
+  const SL = { list: [], merged: null, mode: null, a: null, b: null, plan: null }, PP = { pi: -1, lastT: 0, lastU: null }, DR = { pts: null }, BR = { a: null, b: null, plan: null, mode: (localStorage.getItem('wp-brMode') === 'add' ? 'add' : 'del'), list: null, merged: null }, RB = { px: 22, mode: 'all', at: null }, TH = { pi: -1, list: null }, CO = { region: null, sel: -1 }, CL = { mode: 'area', regs: [], pts: [], grow: false, box: null };
   // ================= gestures =================
   function down(e, p, u, base) { const g = Object.assign(base, { t4: tool, kind: 't4' }), tolU = tolT(e);
     if (tool === 'sel') { g.kind = 'tap'; g.tx = view.tx; g.ty = view.ty; return g; } // drag = move the picture, tap = pick
@@ -146,13 +146,38 @@ window.T4 = (() => {
     const fwd = new Set(); for (let k = j1; k !== j2; k = (k + 1) % q.n.length) fwd.add(k);
     let del = fwd; if (q.z) { const back = new Set(); for (let k = 0; k < m; k++) if (!fwd.has(k)) back.add(k); const len = s => [...s].reduce((acc, k) => acc + BZ.length({ n: [q.n[k], q.n[(k + 1) % q.n.length]], z: false }), 0); if (len(back) < len(fwd)) del = back; }
     const removed = keepSegs(q, new Set([...Array(m).keys()].filter(k => !del.has(k)))); return { kind: 'del', keep: keepSegs(q, del), removed }; }
-  function brkTap(u, e) { const tolU = tolT(e), pk = brkPick(u, tolU); if (!BR.a || BR.b) { BR.a = pk; BR.b = null; BR.plan = null; } else { BR.b = pk; BR.plan = brkPlan(); } panel(); draw(); }
+  // v5.1: Remove mode follows the whole joined line (like Select › Break), so two taps on one line always remove the bit between
+  function brkPos(m, u) { const r = BZ.nearest(m, u, 0.2); if (!r) return null; let pos = { k: r.k, t: r.t, pt: r.pt, d: r.d }; const sn = 14 / view.s;
+    m.n.forEach((nd, j) => { if (Math.hypot(nd.x - r.pt[0], nd.y - r.pt[1]) < sn) pos = Object.assign(j < m.n.length - 1 || m.z ? { k: j % BZ.nseg(m), t: 0, pt: [nd.x, nd.y] } : { k: BZ.nseg(m) - 1, t: 1, pt: [nd.x, nd.y] }, { d: r.d }); }); return pos; }
+  function brkClear() { BR.a = BR.b = BR.plan = null; BR.list = BR.merged = null; }
+  function brkTap(u, e) { const tolU = tolT(e);
+    if (BR.mode === 'add') { const pk = brkPick(u, tolU); if (!BR.a || BR.b) { BR.a = pk; BR.b = null; BR.plan = null; } else { BR.b = pk; BR.plan = d2(BR.a.pt, pk.pt) > 1e-6 ? { kind: 'add', a: BR.a, b: pk } : null; if (!BR.plan) { BR.b = null; toast('Tap a different point'); } } panel(); draw(); return; }
+    if (!BR.a || BR.b) { brkClear(); BR.u1 = u; BR.tol1 = tolU; const h = hitLine(u, tolU, isEtch);
+      if (!h) { BR.a = brkPick(u, tolU); BR.list = null; panel(); draw(); return; } // empty space: the two taps will add a line
+      const c = chainOf(h.pi); BR.list = c.list; BR.merged = c.merged; BR.a = brkPos(c.merged, u); panel(); draw(); return; }
+    // 1st tap off any line, or the 2nd tap not on the same line: join the two taps with a new line (as before)
+    const addPlan = () => { const A = brkPick(BR.u1, BR.tol1), B = brkPick(u, tolU); if (d2(A.pt, B.pt) < 1e-6) { toast('Tap a different point'); return; }
+      BR.list = BR.merged = null; BR.a = A; BR.b = B; BR.plan = { kind: 'add', a: A, b: B, auto: true }; panel(); draw(); };
+    if (!BR.list) { addPlan(); return; }
+    // pick the line BOTH taps are on (the 1st tap may have been on a joint where several lines meet): best fit to both taps wins
+    const t1 = Math.max(tolU, BR.tol1) * 1.5; let best = null; const seen = new Set();
+    const tryChain = c => { const key = c.list.slice().sort((x, y) => x - y).join(','); if (seen.has(key)) return; seen.add(key); const A = brkPos(c.merged, BR.u1), B = brkPos(c.merged, u);
+      const own = c.list.includes(BR.list[0]), tA = own ? t1 : Math.min(t1, (BR.a ? BR.a.d : 0) + 8 / view.s);
+      if (!A || !B || A.d > tA || B.d > tolU * 1.5 || d2(A.pt, B.pt) < 1e-6) return; const sc = A.d + B.d + (own ? 0 : 1e-9); if (!best || sc < best.sc) best = { c, A, B, sc }; };
+    tryChain({ list: BR.list, merged: BR.merged });
+    S.paths.forEach((p, pi) => { if (!isEtch(p) || p.n.length < 2 || BR.list.includes(pi)) return; const r1 = BZ.nearest(p, BR.u1, 0.3), r2 = BZ.nearest(p, u, 0.3); if (r1 && r2 && r1.d <= Math.min(t1, (BR.a ? BR.a.d : 0) + 8 / view.s) && r2.d <= tolU * 1.5) tryChain(chainOf(pi)); });
+    if (!best) { const own = brkPos(BR.merged, u); if (own && own.d <= tolU * 1.5) { toast('Tap a different point'); return; } addPlan(); return; }
+    BR.list = best.c.list; BR.merged = best.c.merged; BR.a = best.A; const pos = best.B;
+    if (d2(BR.a.pt, pos.pt) < 1e-6) { toast('Tap a different point'); return; }
+    BR.b = pos; BR.plan = delPlan(BR.merged, BR.a, BR.b); panel(); draw(); }
   function brkConfirm() { const pl = BR.plan; if (!pl) return; pushUndo();
-    if (pl.kind === 'del') { replacePath(pl.pi, pl.keep); toast('Section removed - the laser stays off across the gap'); }
+    if (pl.kind === 'del') { const first = S.paths[BR.list[0]], props = {}; for (const k of ['cut', 'w', 'dbl']) if (first && first[k] != null) props[k] = first[k];
+      [...BR.list].sort((x, y) => y - x).forEach(i => S.paths.splice(i, 1)); for (const q of pl.keep) S.paths.push(Object.assign(q, props, { n: q.n }));
+      toast('Section removed - the laser stays off across the gap. Undo puts it back.'); }
     else { const pts = [pl.a, pl.b]; // insert join points into lines (higher index first is not needed: insert does not reindex paths)
       for (const s of pts) if (!s.free && !s.end && s.t > 1e-6 && s.t < 1 - 1e-6) { const p = S.paths[s.pi]; if (p) BZ.insertNode(p, s.k, s.t); }
       const nl = BZ.fromPoints([pl.a.pt, pl.b.pt], false); S.paths.push(nl); glow(nl); toast('Line added'); }
-    BR.a = BR.b = BR.plan = null; changed(); panel(); }
+    brkClear(); changed(); panel(); }
   // ================= Eraser =================
   function applyRub(a, b, g) { const r = RB.px / view.s, x0 = Math.min(a[0], b[0]) - r, x1 = Math.max(a[0], b[0]) + r, y0 = Math.min(a[1], b[1]) - r, y1 = Math.max(a[1], b[1]) + r;
     const inBrush = q => BZ.segD(q, a, b)[0] <= r, step = Math.max(0.3, r / 5); let cand = S.paths.map((p, i) => i).filter(pi => !S.paths[pi].cut && !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1));
@@ -244,9 +269,13 @@ window.T4 = (() => {
         !SL.a ? '<b>Break:</b> tap where the line should <b>STOP</b> (it snaps onto the blue line).' : !SL.b ? 'Now tap where the line <b>STARTS AGAIN</b>.' : '<b style="color:#e03131">Red dashes</b> = the gap (laser off). Tap Confirm.');
       $('t4slOk').disabled = !SL.plan; }
     if (tool === 'p2p') { $('t4ppDone').disabled = !(PP.live && PP.pi >= 0); set('t4ppHint', PP.live ? `Drawing: ${S.paths[PP.pi] ? S.paths[PP.pi].n.length : 0} point(s). Tap the next point, tap the first point to close, or Done.` : HINT.p2p); }
-    if (tool === 'brk') { set('t4brHint', !BR.a ? 'Tap two points. On one line: the bit between is removed. Across a gap or on two ends: a line is added.' : !BR.b ? 'Now tap the second point.' :
-      BR.plan && BR.plan.kind === 'del' ? '<b style="color:#e03131">Red dashes</b> = the section that will be removed. Tap Confirm.' : '<b style="color:#e8590c">Orange</b> = the line that will be added. Tap Confirm.');
-      $('t4brOk').disabled = !BR.plan; $('t4brOk').textContent = BR.plan ? (BR.plan.kind === 'del' ? '✓ Confirm: remove' : '✓ Confirm: add line') : '✓ Confirm'; }
+    if (tool === 'brk') { const del = BR.mode !== 'add'; document.querySelectorAll('[data-brmode]').forEach(b => { const onB = b.dataset.brmode === BR.mode; b.classList.toggle('accent', onB); b.setAttribute('aria-pressed', String(onB)); });
+      set('t4brHint', del ? (!BR.a ? '<b>Remove a section:</b> tap a line where the gap should start, then tap the <b>same line</b> where it should end. (Two taps on different lines or in empty space join them with a new line.)'
+          : !BR.b ? (BR.list ? 'Line picked (blue). Now tap the <b>same line</b> where the gap should end.' : 'That tap is not on a line. Tap where a new line should end.')
+          : BR.plan && BR.plan.kind === 'del' ? '<b style="color:#e03131">Red dashes</b> = the bit that will be removed. Tap ✓ Remove it.'
+          : '<b style="color:#e8590c">Orange</b> = a <b>new line</b> will be added, because the two taps are not on the same line. To remove a bit instead, tap ✕ Cancel and tap twice on one line.')
+        : (!BR.a ? '<b>Add a line:</b> tap where the new line starts, then where it ends (ends snap onto lines).' : !BR.b ? 'Now tap where the new line ends.' : '<b style="color:#e8590c">Orange</b> = the line that will be added. Tap ✓ Add it.'));
+      $('t4brOk').disabled = !BR.plan; $('t4brOk').textContent = BR.plan ? (BR.plan.kind === 'del' ? '✓ Remove it' : '✓ Add it') : '✓ Confirm'; }
     if (tool === 'rub') set('t4rbOut', `${(RB.px / view.s * kmm()).toFixed(1)} mm`);
     if (tool === 'thick') { const p = TH.pi >= 0 ? S.paths[TH.pi] : null; set('t4thHint', p ? `This line: ${describe(p)}.` : 'Tap a line to pick it (it turns blue), then set its thickness.');
       if (p) { $('t4w').value = p.w || S.lineMm; $('t4wn').value = (p.w || S.lineMm); $('t4dbl').checked = !!p.dbl; if (p.dbl) $('t4dd').value = p.dbl.toFixed(2); } $('t4w').min = S.lineMm; $('t4ddRow').hidden = !$('t4dbl').checked; }
@@ -267,6 +296,7 @@ window.T4 = (() => {
       p.n.forEach((nd, j) => { ctx.fillStyle = j === 0 ? '#1971c2' : '#fff'; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.arc(nd.x, nd.y, j === 0 ? r * 1.4 : r, 0, 7); ctx.fill(); ctx.stroke(); }); }
     if (tool === 'draw' && DR.pts) { ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 2.4 * px; ctx.beginPath(); ctx.moveTo(DR.pts[0][0], DR.pts[0][1]); for (const q of DR.pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
     if (tool === 'brk') { const dot = (s, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(s.pt[0], s.pt[1], 6 * px, 0, 7); ctx.fill(); };
+      if (BR.merged && BR.mode !== 'add') { ctx.strokeStyle = 'rgba(25,113,194,0.85)'; ctx.lineWidth = 3 * px; ctx.beginPath(); tracePath(BR.merged); ctx.stroke(); }
       const pl = BR.plan; if (pl && pl.kind === 'del') { ctx.strokeStyle = '#e03131'; ctx.lineWidth = 4 * px; ctx.setLineDash([6 * px, 5 * px]); ctx.beginPath(); pl.removed.forEach(tracePath); ctx.stroke(); ctx.setLineDash([]); }
       if (pl && pl.kind === 'add') { ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 3.5 * px; ctx.beginPath(); ctx.moveTo(pl.a.pt[0], pl.a.pt[1]); ctx.lineTo(pl.b.pt[0], pl.b.pt[1]); ctx.stroke(); }
       if (BR.a) dot(BR.a, '#e8590c'); if (BR.b) dot(BR.b, '#e8590c'); }
@@ -278,10 +308,10 @@ window.T4 = (() => {
         ctx.beginPath(); ctx.moveTo(r.poly[0][0], r.poly[0][1]); for (const q of r.poly) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); }
       if (CL.box) { const [a, b] = CL.box; ctx.fillStyle = 'rgba(224,49,49,0.18)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2 * px; ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); }
       if (CL.mode === 'poly') CL.pts.forEach((q, i) => { ctx.fillStyle = 'rgba(224,49,49,0.18)'; ctx.beginPath(); ctx.arc(q[0], q[1], 14 * px, 0, 7); ctx.fill(); ctx.fillStyle = i === 0 ? '#e03131' : '#fff'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.8 * px; ctx.beginPath(); ctx.arc(q[0], q[1], (i === 0 ? 7 : 6) * px, 0, 7); ctx.fill(); ctx.stroke(); }); } }
-  function reset() { SL.list = SL.list.filter(i => S.paths[i]); if (SL.list.length) { const c = chainOf(SL.list[0]); SL.list = c.list; SL.merged = c.merged; } else SL.merged = null; SL.mode = null; SL.a = SL.b = SL.plan = null; if (PP.live && PP.pi >= 0 && !S.paths[PP.pi]) PP.live = false; if (PP.live && PP.pi >= 0 && S.paths[PP.pi] && S.paths[PP.pi].n.length < 1) PP.live = false; BR.a = BR.b = BR.plan = null; CO.region = null; if (TH.pi >= S.paths.length) TH.pi = -1; if (CO.sel >= S.paths.length) CO.sel = -1; focus = null; panel(); }
-  function onTool(t, prev) { if (t !== 'sel') { SL.list = []; SL.merged = null; } SL.mode = null; SL.a = SL.b = SL.plan = null; if (prev === 'p2p' && t !== 'p2p' && PP.live) p2pDone(); BR.a = BR.b = BR.plan = null; CO.region = null; focus = null; if (t !== 'thick') TH.pi = -1; if (t !== 'clear') { CL.pts = []; CL.regs = []; CL.box = null; } DR.pts = null; RB.at = null; panel(); }
+  function reset() { SL.list = SL.list.filter(i => S.paths[i]); if (SL.list.length) { const c = chainOf(SL.list[0]); SL.list = c.list; SL.merged = c.merged; } else SL.merged = null; SL.mode = null; SL.a = SL.b = SL.plan = null; if (PP.live && PP.pi >= 0 && !S.paths[PP.pi]) PP.live = false; if (PP.live && PP.pi >= 0 && S.paths[PP.pi] && S.paths[PP.pi].n.length < 1) PP.live = false; brkClear(); CO.region = null; if (TH.pi >= S.paths.length) TH.pi = -1; if (CO.sel >= S.paths.length) CO.sel = -1; focus = null; panel(); }
+  function onTool(t, prev) { if (t !== 'sel') { SL.list = []; SL.merged = null; } SL.mode = null; SL.a = SL.b = SL.plan = null; if (prev === 'p2p' && t !== 'p2p' && PP.live) p2pDone(); brkClear(); CO.region = null; focus = null; if (t !== 'thick') TH.pi = -1; if (t !== 'clear') { CL.pts = []; CL.regs = []; CL.box = null; } DR.pts = null; RB.at = null; panel(); }
   function wire() { const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
-    on('t4ppDone', p2pDone); on('t4ppUndo', undo); on('t4drUndo', undo); on('t4brOk', brkConfirm); on('t4brNo', () => { BR.a = BR.b = BR.plan = null; panel(); draw(); }); on('t4rbUndo', undo);
+    on('t4ppDone', p2pDone); on('t4ppUndo', undo); on('t4drUndo', undo); on('t4brOk', brkConfirm); on('t4brNo', () => { brkClear(); panel(); draw(); }); document.querySelectorAll('[data-brmode]').forEach(b => b.onclick = () => { BR.mode = b.dataset.brmode; try { localStorage.setItem('wp-brMode', BR.mode); } catch (e) {} brkClear(); panel(); draw(); }); on('t4rbUndo', undo);
     on('t4coGo', doCutOut); on('t4coEtch', makeEtch); on('t4clGo', doClear); document.querySelectorAll('[data-clmode]').forEach(b => b.onclick = () => { CL.mode = b.dataset.clmode; CL.pts = []; panel(); draw(); }); { const gr = $('t4clGrow'); if (gr) gr.onchange = () => { CL.grow = gr.checked; panel(); draw(); }; } on('t4clBack', () => { CL.pts.pop(); panel(); draw(); }); on('t4clNo', () => { CL.regs = []; CL.box = null; CL.pts = []; panel(); draw(); });
     on('t4thAll', () => applyThick(true)); on('t4slDel', () => selAct('del')); on('t4slBrkB', () => selAct('brk')); on('t4slTh', () => selAct('thick')); on('t4slCut', () => selAct('cut'));
     on('t4slOk', selConfirm); on('t4slNo', () => { SL.mode = null; SL.a = SL.b = SL.plan = null; panel(); draw(); });

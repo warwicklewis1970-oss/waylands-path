@@ -150,21 +150,27 @@ const LZ = (() => {
     e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cl, true); e.setUint32(16, off, true);
     return new Blob([...parts, ...cen, e.buffer], { type: 'application/zip' }); }
   const tag = b => `${TAG[b.mode]} P${b.P} F${b.F}${b.passes > 1 ? ` x${b.passes}` : ''}`;
+  // a project name that is safe as a Windows file name: no \ / : * ? " < > | or control characters, no trailing dot or space,
+  // not a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), at most 40 characters
+  function safeName(name) { let b = String(name || '').replace(/[\u0000-\u001f\u007f\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40).replace(/[. ]+$/, '');
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(b)) b = b + ' design'; return b || 'Waylands Path'; }
   // all files for one export
   function build(o) { const { name, art, cut, widthMm, burn, smax, lineMm, pxmm } = o, fr = frame(art, cut, widthMm); if (!fr) throw new Error('Nothing to export yet - open a picture first.'); fr.lineMm = lineMm;
     const lay = layout(fr, o.sheet, o.border); if (lay.on && !lay.fits) throw new Error(`The ${lay.nx} x ${lay.ny} copies (${f2(lay.bw)} x ${f2(lay.bh)} mm) do not fit inside the margin of the ${f2(lay.W)} x ${f2(lay.H)} mm blank. Use fewer copies, a smaller width, or tap Fit as many as possible.`);
-    const base = (String(name || 'Waylands Path').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Waylands Path').slice(0, 40), size = lay.on ? `${lay.n}x on ${Math.round(lay.W)}x${Math.round(lay.H)}mm` : `${Math.round(fr.W)}x${Math.round(fr.H)}mm`;
+    // v5.1: file NAMES = project name + export date/time (o.stamp, e.g. "2026-11-19 2300"), so every export has its own names in
+    // Downloads / LaserGRBL. File CONTENTS still use just the project name (base), so they are byte-for-byte as before.
+    const base = safeName(name), fb = o.stamp ? `${base} ${String(o.stamp).replace(/[^0-9 -]/g, '').trim()}`.trim() : base, size = lay.on ? `${lay.n}x on ${Math.round(lay.W)}x${Math.round(lay.H)}mm` : `${Math.round(fr.W)}x${Math.round(fr.H)}mm`;
     const steps = [{ key: 'engrave', label: 'Engrave lines', paths: art }]; if (cut && cut.length) steps.push({ key: 'cut', label: 'Cut outside', paths: cut });
     const files = [];
     steps.forEach((s, i) => { const b = burn[s.key], n = i + 1; s.n = n; s.b = b;
-      s.file = `${base} ${n} ${s.label.toLowerCase()} ${tag(b)}.nc`;
+      s.file = `${fb} ${n} ${s.label.toLowerCase()} ${tag(b)}.nc`;
       s.data = b.mode === 'vec' ? (s.key === 'cut' ? cutG(fr, s.paths, b, smax, s.label, lay) : vecG(fr, s.paths, b, smax, s.label, lay)) : rasterG(fr, s.paths, b, smax, s.label, lineMm, pxmm, lay);
       files.push({ name: s.file, data: s.data }); });
     const groups = [{ id: 'engrave-lines', color: '#000000', width: lineMm, paths: art }]; if (cut && cut.length) groups.push({ id: 'cut-outside', color: '#ff0000', width: 0.1, paths: cut });
-    const svgAll = svg(fr, groups, `${base} ${size}`, lay), svgName = `${base} artwork ${size}.svg`; files.push({ name: svgName, data: svgAll });
-    steps.forEach(s => files.push({ name: `${base} ${s.n} ${s.label.toLowerCase()}.svg`, data: svg(fr, [groups[s.n - 1]], `${base} ${s.label}`, lay) }));
-    const readme = readMe(base, fr, steps, smax, svgName, lay); files.unshift({ name: `${base} 0 read me.txt`, data: readme });
-    return { fr, lay, steps, files, base, size, svgAll, svgName, zipName: `${base} laser.zip` }; }
+    const svgAll = svg(fr, groups, `${base} ${size}`, lay), svgName = `${fb} artwork ${size}.svg`; files.push({ name: svgName, data: svgAll });
+    steps.forEach(s => files.push({ name: `${fb} ${s.n} ${s.label.toLowerCase()}.svg`, data: svg(fr, [groups[s.n - 1]], `${base} ${s.label}`, lay) }));
+    const readme = readMe(base, fr, steps, smax, svgName, lay); files.unshift({ name: `${fb} 0 read me.txt`, data: readme });
+    return { fr, lay, steps, files, base, fileBase: fb, size, svgAll, svgName, zipName: `${fb} laser.zip` }; }
   function readMe(base, fr, steps, smax, svgName, lay) { const L = [`WAYLANDS PATH - ${base}`, lay && lay.on ?
       `Blank: ${f2(lay.W)} x ${f2(lay.H)} mm with ${lay.n} cop${lay.n > 1 ? 'ies' : 'y'} of the ${f2(fr.W)} x ${f2(fr.H)} mm design. Laser 0,0 = BOTTOM-LEFT CORNER OF THE BLANK - put the laser there before Start.` :
       lay && lay.pad ? `Design: ${f2(fr.W)} x ${f2(fr.H)} mm with a ${f2(lay.pad)} mm border all round (area ${f2(lay.W)} x ${f2(lay.H)} mm).\r\nSET YOUR LASER'S ZERO ${f2(lay.pad)} mm BELOW AND ${f2(lay.pad)} mm LEFT OF WHERE THE DESIGN'S BOTTOM-LEFT CORNER (lowest point, e.g. the tab bottoms) SHOULD GO. Nothing burns closer than ${f2(lay.pad)} mm to 0,0. Run Frame first.` :
@@ -177,5 +183,5 @@ const LZ = (() => {
     if (steps.length > 1) L.push('Burn step 1 first, then step 2 (the cut) without moving the material or the laser origin.', '');
     L.push(`Also included: ${svgName} (all lines in mm, cut in red) and one SVG per step, for Inkscape or LaserGRBL's SVG import.`, 'Made with Waylands Path.');
     return L.join('\r\n') + '\r\n'; }
-  return { widthOffs, offsetPoly, chainPolys, orderPolys, travel, polysG, layout, fitCount, cutOrder, cutDepths, cutG, MODES, TAG, DEF, frame, vecG, rasterG, svg, makeZip, crc32, build, tag, toMmSvg, toMmG };
+  return { safeName, widthOffs, offsetPoly, chainPolys, orderPolys, travel, polysG, layout, fitCount, cutOrder, cutDepths, cutG, MODES, TAG, DEF, frame, vecG, rasterG, svg, makeZip, crc32, build, tag, toMmSvg, toMmG };
 })();

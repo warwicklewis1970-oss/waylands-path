@@ -39,6 +39,20 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.1 - Break fix, recent clones
+- **Break**: two buttons at the top, **✂ Remove a section** (the default) and **＋ Add a line**. In Remove, the first tap picks the
+  whole joined line (shown blue, even if it is made of several traced pieces), the second tap on the same line marks the end, red dashes show
+  what goes, then **✓ Remove it**. Undo puts it back. Before, a line made of several pieces (most traced lines) nearly always became "add a line".
+- **Clone**: the last 3 things you cloned are kept on this device (across projects and restarts) as a **Recent clones** row with pictures.
+  Tap one to place a fresh copy in the middle of the screen, same type and size in mm, ready to move, size, turn or Reset.
+- **File names**: every export is named after the project plus the date and time, e.g.
+  `Tower door 2026-11-19 2300 1 engrave lines VEC P25 F3000.nc`, `... 2 cut outside VEC P100 F1000 x3.nc`, `... laser.zip`, `... artwork 150x162mm.svg`,
+  so exports never overwrite or get "(1)" copies in Downloads and are easy to tell apart in LaserGRBL. Names are Windows-safe.
+  The G-code and SVG contents are byte-for-byte the same; only the read me lists the new names.
+- **Projects**: a new or renamed project never takes a name another project already has ("dog" -> "dog 2"); older same-name projects
+  are flagged in My projects with "tap ✎ to rename".
+- Laser output is unchanged unless you use these: a removed section is not burnt, a placed recent clone burns like the original.
+
 ## v5.0 - Clone tool
 
 New **Clone** button at the end of the editor toolbar. Copy a line, shape, cut out or hanging hole, then size, turn and move the copy, with **Reset to original**.
