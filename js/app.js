@@ -1,12 +1,15 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.1';
+const APP_VERSION = 'v5.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
 // ---------- state ----------
-const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detail: 5, corners: 5, mode: 'auto', faint: 4, straighten: true },
-  widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
+// v5.2 photo tracing: last-used photo sliders, remembered on this device for every new photo
+const PHOTO_KEY = 'wp-photo1', PHOTO_DEF = () => ({ detail: 5, smooth: 5, minLen: 4 });
+function photoLast() { try { const v = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (v) return Object.assign(PHOTO_DEF(), v); } catch (e) { /* */ } return PHOTO_DEF(); }
+const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detail: 5, corners: 5, mode: 'auto', faint: 4, straighten: true, kind: 'line', photo: photoLast() },
+  widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, photoOp: 25, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
 function SHEET0() { return { on: false, W: 200, H: 200, margin: 5, gap: 5, nx: 1, ny: 1, place: 'centre' }; }
 let S = DEFAULTS(), srcImg = null, srcEl = null, undoSt = [], redoSt = [], tool = 'move';
 let sel = new Set(), act = new Set(), lastTap = null, pen = null, skip = { mode: 'skip', first: -1 }, delMode = 'stretch', lw = 0;
@@ -66,7 +69,7 @@ function tracePath(p) { const n = p.n; if (!n.length) return; ctx.moveTo(n[0].x,
 let paintN = 0;
 function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.width, H = cv.height; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#f6f2ea'; ctx.fillRect(0, 0, W, H);
   ctx.setTransform(d * view.s, 0, 0, d * view.s, d * view.tx, d * view.ty); const px = 1 / view.s;
-  if (S.src && S.src.w) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S.src.w, S.src.h); if (srcEl && S.showPhoto) { ctx.globalAlpha = 0.18; ctx.drawImage(srcEl, 0, 0, S.src.w, S.src.h); ctx.globalAlpha = 1; }
+  if (S.src && S.src.w) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S.src.w, S.src.h); if (srcEl && S.showPhoto) { ctx.globalAlpha = Math.max(0.05, Math.min(0.8, (S.photoOp == null ? 25 : S.photoOp) / 100)); ctx.drawImage(srcEl, 0, 0, S.src.w, S.src.h); ctx.globalAlpha = 1; }
     ctx.strokeStyle = '#d8d0c2'; ctx.lineWidth = px; ctx.strokeRect(0, 0, S.src.w, S.src.h); }
   ctx.lineCap = ctx.lineJoin = 'round';
   // grey edge = the cut line (dashed when cutting is switched off)
@@ -118,14 +121,14 @@ function makeCut(auto) { const e = etch(); if (!e.length) { toast('No lines to g
   for (const p of all) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
   g.stroke(); const id = g.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = id[i * 4] < 160 ? 1 : 0;
   const loops = T.outerCut(m, w, h, offU * s, brU * s).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy]));
-  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? 'No outside edge was found in the picture, so a grey cut line was made round the design.' : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
+  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? (S.trace && S.trace.kind === 'photo' ? 'A grey cut line was made round the drawing. Don\'t want it cut out? Untick it in Size & cut.' : 'No outside edge was found in the picture, so a grey cut line was made round the design.') : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
 // ---------- tracing ----------
 // The tracer normally runs in a helper (js/worker.js) so the screen stays smooth. If the helper can't load, says nothing within a few
 // seconds, errors, or takes far too long, tracing carries on here on the main screen instead - never "Tracing..." forever.
 let worker = null, workerReady = false, wid = 0, traceT = null, readyT = null; const pending = new Map();
 const WORKER_READY_MS = 6000, WORKER_JOB_MS = 90000;
 function runMain(job) { $('busy').textContent = 'Tracing on this screen (slower)…'; $('busy').hidden = false;
-  setTimeout(() => { let r; try { r = T.lineArt(job.img, job.opts); } catch (err) { r = { error: String(err && err.message || err) }; } job.res(r); }, 30); }
+  setTimeout(() => { let r; try { r = T.run(job.img, job.opts); } catch (err) { r = { error: String(err && err.message || err) }; } job.res(r); }, 30); }
 function workerFailed(why) { if (!worker && !pending.size) return; try { worker && worker.terminate(); } catch (e) { /* */ } worker = null; workerReady = false; clearTimeout(readyT);
   const jobs = [...pending.values()]; pending.clear(); jobs.forEach(j => clearTimeout(j.t)); toast(`The tracing helper ${why}, so tracing runs on this screen instead (a little slower).`, 5000); jobs.forEach(runMain); }
 try { worker = new Worker('js/worker.js');
@@ -143,11 +146,13 @@ async function retrace(record = true) { if (!srcImg) return; const seq = ++trace
   const keepUC = record ? S.paths.filter(p => p.cut && p.uc).map(p => BZ.clone(p)) : []; S.paths = r.paths; clearSel(); pen = null;
   if (keepUC.length) { for (const k of keepUC) { const kb = BZ.bbox([k]), m = S.paths.findIndex(q => !q.cut && q.z && (b => Math.abs(b.x0 - kb.x0) + Math.abs(b.y0 - kb.y0) + Math.abs(b.x1 - kb.x1) + Math.abs(b.y1 - kb.y1) < 4)(BZ.bbox([q]))); if (m >= 0) S.paths.splice(m, 1); S.paths.push(k); } toast(`Traced again - your ${keepUC.length} cut out${keepUC.length > 1 ? 's were' : ' was'} kept`, 3500); }
   const nc = r.paths.filter(p => p.cut).length;
+  if (r.mode === 'photo') $('traceInfo').innerHTML = `Photo: ${r.paths.length} lines, ${r.nodes} points. Fewer lines: lower <b>Detail</b> or raise <b>Ignore small bits</b>. Wobbly: raise <b>Smoothness</b>. Then tidy up with Eraser, Clear space and Draw over the faint photo. No cut line is added for a photo - for a cut-out shape use <b>⬡ Add shape</b> (or Make cut in Size &amp; cut).`; else
   $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide. ${r.darkBg ? 'Auto: light shapes on a dark background (if that is wrong, tap <b>Dark lines on light paper</b>).' : r.mode === 'light' ? 'Light lines on dark.' : r.mode === 'normal' ? 'Dark lines on light paper.' : 'Auto: dark lines on light paper.'} ${nc ? 'Grey cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.solids ? ` ${r.solids} solid dark shape${r.solids > 1 ? 's' : ''} (windows, hinges…) traced round the edge.` : ''}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
-  changed(); if (!cuts().some(p => !innerCuts().includes(p)) && etch().length) makeCut(true); }
+  // photos: no automatic cut line (on a busy photo it would cut many small holes) - add a shape or Make cut by choice
+  photoBgUI(); changed(); if (S.trace.kind !== 'photo' && !cuts().some(p => !innerCuts().includes(p)) && etch().length) makeCut(true); }
 function traceSoon() { clearTimeout(traceT); traceT = setTimeout(() => retrace(true), 160); }
 // ---------- opening files ----------
-async function openFile(file) { if (!file) return; const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name), name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled';
+async function openFile(file, kind = 'line') { if (!file) return; const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name), name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled';
   try { if (isSvg) { const r = SVGIN.importSVG(await file.text()); startProject(name); S.src = { kind: 'svg', w: r.w, h: r.h }; $('sec-trace').hidden = true; srcImg = null; srcEl = null; S.paths = r.paths; S.cutOn = false;
       const sk = []; if (r.info.skippedWhite) sk.push(`${r.info.skippedWhite} white background shape${r.info.skippedWhite > 1 ? 's' : ''}`); if (r.info.skippedText) sk.push(`${r.info.skippedText} text item(s) (convert text to paths first)`); if (r.info.skippedUse) sk.push(`${r.info.skippedUse} linked symbol(s)`);
       $('srcInfo').innerHTML = `SVG: ${r.paths.length} lines from ${r.info.shapes} shapes, curves kept.${sk.length ? `<br><span class="warn">Skipped ${sk.join(', ')}.</span>` : ''}`;
@@ -155,7 +160,8 @@ async function openFile(file) { if (!file) return; const isSvg = /svg/i.test(fil
     const el = await loadImage(file), sc = Math.min(1, 1600 / Math.max(el.width, el.height)), w = Math.max(1, Math.round(el.width * sc)), h = Math.max(1, Math.round(el.height * sc));
     const alphaOk = /png|gif|webp/i.test(file.type), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); if (!alphaOk) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } g.drawImage(el, 0, 0, w, h);
     const url = c.toDataURL(alphaOk ? 'image/png' : 'image/jpeg', 0.92);
-    startProject(name); S.src = { kind: 'image', w, h, url }; $('sec-trace').hidden = false; await setSource(url); $('srcInfo').textContent = `${file.name} · ${w} × ${h} px.`;
+    startProject(name); S.trace.kind = kind === 'photo' ? 'photo' : 'line'; if (S.trace.kind === 'photo') { S.trace.photo = photoLast(); S.showPhoto = true; } traceKindUI(); syncInputs();
+    S.src = { kind: 'image', w, h, url }; $('sec-trace').hidden = false; await setSource(url); $('srcInfo').textContent = `${file.name} · ${w} × ${h} px.`;
     enterApp(); openSec('sec-trace', false); closeMenu(); fit(); await retrace(false); fit(); }
   catch (e) { console.error(e); toast(e.message || 'Could not open that file.', 4000); } }
 function loadImage(file) { return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('That picture could not be opened. Try a JPG or PNG.')); im.src = u; }); }
@@ -166,18 +172,32 @@ function startProject(name) { const keep = { widthMm: S.widthMm, lineMm: S.lineM
 // v5.1 two projects never share a name in My projects (opening the same picture twice gives "dog 2", "dog 3" ...)
 function uniqueSoon() { if (!window.PJ || !PJ.uniqueName) return; const pid = S.pid, n0 = S.name; PJ.uniqueName(n0, pid).then(n => { if (S.pid === pid && S.name === n0 && n !== n0) { S.name = n; syncInputs(); saveSoon(); } }).catch(() => {}); }
 ['homeFile', 'stageFile', 'panelFile'].forEach(id => $(id).addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openFile(f); }));
+['homePhoto', 'panelPhoto'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openFile(f, 'photo'); }); });
 // ---------- inputs ----------
 function syncInputs() { $('nameBtn').textContent = (S.name || 'Untitled') + ' ✎'; $('detail').value = S.trace.detail; $('detailOut').textContent = S.trace.detail; $('corners').value = S.trace.corners; $('cornersOut').textContent = S.trace.corners;
-  traceModeUI(); $('faint').value = S.trace.faint == null ? 4 : S.trace.faint; $('faintOut').textContent = $('faint').value; sheetUI(); $('straighten').checked = S.trace.straighten !== false; $('showPhoto').checked = S.showPhoto; $('widthMm').value = S.widthMm; $('lineMm').value = S.lineMm;
+  traceModeUI(); traceKindUI(); photoBgUI(); $('faint').value = S.trace.faint == null ? 4 : S.trace.faint; $('faintOut').textContent = $('faint').value; sheetUI(); $('straighten').checked = S.trace.straighten !== false; $('showPhoto').checked = S.showPhoto; $('widthMm').value = S.widthMm; $('lineMm').value = S.lineMm;
   $('cutOn').checked = S.cutOn; $('cutOff').value = S.cutOff; $('cutTight').value = S.cutTight || 8; $('cutTightOut').textContent = S.cutTight || 8; $('gapMm').value = S.gapMm; $('shortMm').value = S.shortMm; $('sec-trace').hidden = !(S.src && S.src.kind === 'image'); lzUI(); cutInfo(); }
 $('detail').addEventListener('input', e => { S.trace.detail = +e.target.value; $('detailOut').textContent = S.trace.detail; traceSoon(); });
 $('corners').addEventListener('input', e => { S.trace.corners = +e.target.value; $('cornersOut').textContent = S.trace.corners; traceSoon(); });
 function traceModeUI() { const m = S.trace.mode || (S.trace.invert ? 'light' : 'auto'); document.querySelectorAll('[data-tmode]').forEach(b => b.classList.toggle('on', b.dataset.tmode === m)); }
 document.querySelectorAll('[data-tmode]').forEach(b => b.onclick = () => { S.trace.mode = b.dataset.tmode; delete S.trace.invert; traceModeUI(); traceSoon(); });
+// v5.2 picture type (line drawing / photo) + photo sliders. Line-art settings are kept as they were when switching.
+const PH_IDS = { detail: 'phDetail', smooth: 'phSmooth', minLen: 'phMin' };
+function traceKindUI() { const k = S.trace.kind === 'photo' ? 'photo' : 'line'; document.querySelectorAll('[data-tkind]').forEach(b => b.classList.toggle('on', b.dataset.tkind === k));
+  if ($('lineCtl')) $('lineCtl').hidden = k === 'photo'; if ($('photoCtl')) $('photoCtl').hidden = k !== 'photo';
+  const ph = S.trace.photo || (S.trace.photo = photoLast()); for (const [key, id] of Object.entries(PH_IDS)) { if ($(id)) { $(id).value = ph[key]; $(id + 'Out').textContent = ph[key]; } } }
+document.querySelectorAll('[data-tkind]').forEach(b => b.onclick = () => { if ((S.trace.kind || 'line') === b.dataset.tkind) return; S.trace.kind = b.dataset.tkind; if (S.trace.kind === 'photo') { S.trace.photo = S.trace.photo || photoLast(); if (!S.showPhoto) { S.showPhoto = true; photoBgUI(); draw(); } } traceKindUI(); traceSoon(); });
+for (const [key, id] of Object.entries(PH_IDS)) { const el = $(id); if (!el) continue; el.addEventListener('input', () => { const ph = S.trace.photo || (S.trace.photo = photoLast()); ph[key] = +el.value; $(id + 'Out').textContent = el.value; try { localStorage.setItem(PHOTO_KEY, JSON.stringify(ph)); } catch (e) { /* */ } traceSoon(); }); }
+if ($('phReset')) $('phReset').onclick = () => { S.trace.photo = PHOTO_DEF(); try { localStorage.setItem(PHOTO_KEY, JSON.stringify(S.trace.photo)); } catch (e) { /* */ } traceKindUI(); traceSoon(); toast('Photo settings back to their defaults'); };
+// faint photo behind the lines: screen only, never in the laser files
+function photoBgUI() { const has = !!(S.src && S.src.kind === 'image'); if ($('showPhoto')) $('showPhoto').checked = !!S.showPhoto; if ($('photoOp')) { $('photoOp').value = S.photoOp == null ? 25 : S.photoOp; $('photoOpOut').textContent = $('photoOp').value + '%'; $('photoOp').disabled = !S.showPhoto; }
+  const fb = $('bgBtn'); if (fb) { fb.hidden = !has; fb.classList.toggle('on', !!S.showPhoto); fb.setAttribute('aria-pressed', String(!!S.showPhoto)); } }
+if ($('photoOp')) $('photoOp').addEventListener('input', e => { S.photoOp = +e.target.value; photoBgUI(); draw(); saveSoon(); });
+if ($('bgBtn')) $('bgBtn').onclick = () => { S.showPhoto = !S.showPhoto; photoBgUI(); draw(); saveSoon(); toast(S.showPhoto ? 'Faint photo on (screen only - never burnt)' : 'Faint photo off'); };
 $('faint').addEventListener('input', e => { S.trace.faint = +e.target.value; $('faintOut').textContent = S.trace.faint; traceSoon(); });
 $('straighten').addEventListener('change', e => { S.trace.straighten = e.target.checked; traceSoon(); });
 $('retraceBtn').onclick = () => retrace(true);
-$('showPhoto').addEventListener('change', e => { S.showPhoto = e.target.checked; draw(); saveSoon(); });
+$('showPhoto').addEventListener('change', e => { S.showPhoto = e.target.checked; photoBgUI(); draw(); saveSoon(); });
 const numIn = (id, key, lo, hi, after) => $(id).addEventListener('change', e => { const v = +e.target.value; if (!(v >= lo && v <= hi)) { e.target.value = S[key]; toast(`Use a number from ${lo} to ${hi}`); return; } S[key] = v; if (after) after(); saveSoon(); });
 numIn('widthMm', 'widthMm', 5, 2000, () => { updStats(); exSummary(); }); numIn('lineMm', 'lineMm', 0.05, 5, exSummary); numIn('cutOff', 'cutOff', 0, 50); $('cutTight').addEventListener('input', e => { S.cutTight = +e.target.value; $('cutTightOut').textContent = S.cutTight; saveSoon(); }); numIn('gapMm', 'gapMm', 0.1, 20); numIn('shortMm', 'shortMm', 0.1, 100);
 $('cutOn').addEventListener('change', e => { S.cutOn = e.target.checked; cutInfo(); draw(); saveSoon(); exSummary(); });
@@ -555,7 +575,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Break removes a section, Clone remembers your last 3, files named with date and time'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: 📷 turn a photo into a line drawing, faint photo behind the lines'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -602,4 +622,4 @@ $('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromFor
 $('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
 setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
-window.WP = { get paintN() { return paintN; }, holeCount, innerCuts, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { paint, get paintN() { return paintN; }, holeCount, innerCuts, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };

@@ -16,10 +16,11 @@
   <div class="hcard">
     <img src="icons/icon.svg" alt="" class="hlogo">
     <h1 class="htitle">Waylands Path</h1>
-    <div class="hsub">Line drawing or SVG → clean laser lines</div>
+    <div class="hsub">Line drawing, photo or SVG → clean laser lines</div>
     <div class="hbtns">
       <div id="ffWait" class="ffwait" hidden>✏️ A design from Wayland Forge is waiting: <b id="ffWaitName"></b><div class="ffrow"><button id="ffOpen" class="accent">Open it</button><button id="ffDrop">Not now</button></div></div>
       <label class="hb primary filebtn">🖼️ Open line drawing or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
+      <label class="hb filebtn">📷 Turn a photo into a line drawing<small>pets, people, buildings, objects</small><input type="file" id="homePhoto" accept="image/*" hidden></label>
       <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
       <button id="homeHelp" class="hb">? How it works</button>
     </div>
@@ -51,6 +52,7 @@
     <div id="stats" class="stats"></div>
     <div id="busy" class="busy" hidden>Tracing…</div>
     <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+    <button id="bgBtn" class="bgbtn" hidden aria-pressed="false" title="Faint photo behind the lines (screen only)">🖼 Photo</button>
   </section>
   <div id="toolDock">
     <div id="tools" role="toolbar" aria-label="Tools">
@@ -186,11 +188,24 @@
     <div class="menuhead"><b>☰ Menu</b><button id="addShape">⬡ Add shape</button><button id="menuClose" aria-label="Close menu">✕</button></div>
     <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
       <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <div class="row"><label class="filebtn grow">📷 Turn a photo into a line drawing<input type="file" id="panelPhoto" accept="image/*" hidden></label></div>
       <label class="chk"><input type="checkbox" id="showPhoto">Show the picture faintly behind the lines</label>
+      <label class="rg"><span>How faint</span><input type="range" id="photoOp" min="5" max="80" step="5" value="25"><output id="photoOpOut">25%</output></label>
+      <div class="hint">Only on this screen - the picture is never burnt or put in the laser files. The 🖼 Photo button on the drawing turns it on and off.</div>
       <div class="hint" id="srcInfo">No picture yet.</div>
-      <div class="hint">Made for line drawings: AI line art, logos, colouring-page pictures. Photos are not traced.</div>
+      <div class="hint">Line drawings: AI line art, logos, colouring-page pictures. Photos: use 📷 - it finds the main edges and makes them into lines.</div>
     </div></details>
     <details name="acc" id="sec-trace"><summary>2 · Trace</summary><div class="body">
+      <div class="lbl">The picture is</div>
+      <div class="seg wide3" id="tkind"><button data-tkind="line">✏️ A line drawing</button><button data-tkind="photo">📷 A photo</button></div>
+      <div id="photoCtl" hidden>
+        <label class="rg"><span>Detail</span><input type="range" id="phDetail" min="1" max="10" step="1" value="5"><output id="phDetailOut">5</output></label>
+        <label class="rg"><span>Smoothness</span><input type="range" id="phSmooth" min="0" max="10" step="1" value="5"><output id="phSmoothOut">5</output></label>
+        <label class="rg"><span>Ignore small bits</span><input type="range" id="phMin" min="0" max="10" step="1" value="4"><output id="phMinOut">4</output></label>
+        <div class="hint">Detail: more or fewer lines. Smoothness: higher = calmer, rounder lines and less fur / skin texture. Ignore small bits: higher drops short dashes. The drawing updates as you slide.</div>
+        <div class="row"><button id="phReset" class="grow">↺ Reset to defaults</button></div>
+      </div>
+      <div id="lineCtl">
       <div class="lbl">The drawing is</div>
       <div class="seg wide3" id="tmode"><button data-tmode="normal">Dark lines on light paper</button><button data-tmode="light">Light lines on dark</button><button data-tmode="auto">Auto</button></div>
       <label class="rg"><span>Remove faint lines</span><input type="range" id="faint" min="0" max="10" step="1" value="4"><output id="faintOut">4</output></label>
@@ -198,6 +213,7 @@
       <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
       <label class="rg"><span>Corners</span><input type="range" id="corners" min="1" max="10" step="1" value="5"><output id="cornersOut">5</output></label>
       <div class="hint">Detail: higher keeps short bits, lower clears specks. Corners: higher finds more sharp corners.</div>
+      </div>
       <div class="hint" id="traceInfo"></div>
       <details class="adv"><summary>Advanced</summary>
         <label class="chk"><input type="checkbox" id="straighten" checked>Make nearly level / upright lines exactly straight</label>

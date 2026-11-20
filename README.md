@@ -39,6 +39,14 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.2 - Photo to line drawing, faint photo behind
+- Home → **📷 Turn a photo into a line drawing** (or Menu → Picture → Photo). Pets, people, buildings, objects.
+- Trace section: choose **✏️ A line drawing** or **📷 A photo**. Photo sliders: **Detail**, **Smoothness**, **Ignore small bits**, plus **↺ Reset to defaults**. The last values are remembered.
+- Runs offline on the phone (edge finding → joined, smoothed centre lines).
+- The original photo shows **faintly behind the lines** while you edit, with the 🖼 Photo button to turn it on or off and a **How faint** slider (default 25%). It is screen only: never in the G-code or SVG. This works for line-art projects too.
+- Draw, Point to point, Break, Eraser, Clear space and Clone all work over the faint photo.
+- Laser: line-art tracing is unchanged (byte-identical to v5.1). Photo mode gives ordinary etch lines. **No automatic cut line is added for photos**: use ⬡ Add shape (or Make cut) if you want it cut out.
+
 ## v5.1 - Break fix, recent clones
 - **Break**: two buttons at the top, **✂ Remove a section** (the default) and **＋ Add a line**. In Remove, the first tap picks the
   whole joined line (shown blue, even if it is made of several traced pieces), the second tap on the same line marks the end, red dashes show

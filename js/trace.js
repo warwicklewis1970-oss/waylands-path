@@ -401,6 +401,48 @@ const T = (() => {
   // outline around the lines at a distance (used when there is no traced edge, e.g. an imported SVG)
   function outerCut(mask, w, h, off, bridge) { const R = dil(mask, w, h, off + bridge), F = fillHoles(R, w, h), C = ero(F, w, h, bridge), C2 = fillHoles(C, w, h), f = new Float32Array(w * h);
     for (let i = 0; i < f.length; i++) f[i] = C2[i] ? 0 : 1; return contoursIso(blur(f, w, h, 1), w, h, 0.5).filter(p => Math.abs(area(p)) > 20); }
-  return { VERSION, lineArt, outerCut, grey, otsu, blur, thin, edt, fillHoles, contoursIso, lineWidth, skelGraph, area };
+  // ================= v5.2 PHOTO mode: a real photo -> a clean line drawing =================
+  // smooth the photo (Smoothness) -> local contrast (Contrast) -> Canny edges (Detail sets how many) -> thin to 1 px -> line graph (same tidying as line art: spurs, specks, small gaps) ->
+  // drop short bits (Ignore small bits) -> smooth + simplify -> Bezier paths.
+  // (A plain-background remover was tried and dropped: on silver/grey objects it ate the subject's outline.) Runs in the same worker as line art, no server.
+  const PHOTO0 = { detail: 5, smooth: 5, minLen: 4, contrast: 5 };
+  function photo(img, opts = {}) { const t0 = Date.now(), o = {}; for (const k in PHOTO0) o[k] = clamp(opts[k] == null || !isFinite(+opts[k]) ? PHOTO0[k] : +opts[k], 0, 10);
+    const X = Object.assign({ res: 1000, sig0: 0.8, sigK: 0.35, sf0: 0.025, sfK: 0.014, lc: 1, score: 0.8, minL0: 4, minLK: 4 }, opts._ || {});
+    const P = prep(img, X.res), { d, w, h } = P, N = w * h, back = 1 / P.sc, diag = Math.hypot(w, h);
+    // 1) grey + contrast: global stretch, then a share of local contrast so faces/fur in shade still show
+    let g = autoContrast(grey(d, w, h)); if (o.contrast > 0) { const bg = blur(g, w, h, diag / 40), k = o.contrast / 10 * X.lc, gain = 1 + k * 1.5;
+      for (let i = 0; i < N; i++) g[i] = clamp(0.5 + (g[i] - bg[i]) * gain + (bg[i] - 0.5) * (1 - k * 0.6), 0, 1); }
+    // 2) smooth away texture/noise: stronger Smoothness = only bigger, cleaner shapes
+    const sig = (X.sig0 + o.smooth * X.sigK) * diag / 1250; g = blur(g, w, h, sig);
+    // 3) gradient (Sobel) + thin it to its ridge (non-maximum suppression)
+    const mag = new Float32Array(N), dir = new Uint8Array(N);
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x;
+      const gx = g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1] - g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1], gy = g[i + w - 1] + 2 * g[i + w] + g[i + w + 1] - g[i - w - 1] - 2 * g[i - w] - g[i - w + 1];
+      mag[i] = Math.hypot(gx, gy); let a = Math.atan2(gy, gx) * 180 / Math.PI; if (a < 0) a += 180; dir[i] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3; }
+    const nms = new Float32Array(N), OFF = [[1, 0], [1, 1], [0, 1], [-1, 1]];
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x, m = mag[i]; if (m <= 0) continue; const [dx, dy] = OFF[dir[i]];
+      if (m >= mag[i + dy * w + dx] && m > mag[i - dy * w - dx]) nms[i] = m; }
+    // 4) hysteresis: Detail = what share of the ridge pixels count as strong edges
+    const vals = []; for (let i = 0; i < N; i++) if (nms[i] > 0) vals.push(nms[i]); vals.sort((a, b) => a - b);
+    const q = f => vals.length ? vals[clamp(Math.floor(vals.length * f), 0, vals.length - 1)] : 1, hi = q(1 - (X.sf0 + o.detail * X.sfK)), lo = Math.max(hi * 0.45, q(0.35));
+    const E = new Uint8Array(N), st = []; for (let i = 0; i < N; i++) if (nms[i] >= hi) { E[i] = 1; st.push(i); }
+    while (st.length) { const i = st.pop(); for (const nb of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) { const j = i + nb; if (j >= 0 && j < N && !E[j] && nms[j] >= lo) { E[j] = 1; st.push(j); } } }
+    // 6) one pixel wide lines, then the same line graph as line art
+    for (let x = 0; x < w; x++) { E[x] = 0; E[(h - 1) * w + x] = 0; } for (let y = 0; y < h; y++) { E[y * w] = 0; E[y * w + w - 1] = 0; }
+    thin(E, w, h); tidySkeleton(E, w, h);
+    const gr = skelGraph(E, w, h), px = diag / 1250, arm = 3 * px, minL = (X.minL0 + o.minLen * X.minLK) * px;
+    mergeDeg2(gr); prune(gr, minL * 0.35, minL * 0.6); collapseClose(gr, 1.5 * px); mergeDeg2(gr);
+    const gaps = closeGaps(gr, (2 + o.detail * 0.3) * px, arm); mergeDeg2(gr); prune(gr, minL * 0.35, minL);
+    // 7) smooth and simplify each line, drop the short ones
+    const sm = Math.round(1 + o.smooth * 0.5), tol = (0.5 + o.smooth * 0.14) * px, corner = 40 - o.smooth * 1.5, paths = [];
+    const smooth = (pts, closed) => { if (pts.length < 5 || sm < 1) return pts; const n = pts.length, out = []; for (let i = 0; i < n; i++) { if (!closed && (i === 0 || i === n - 1)) { out.push(pts[i]); continue; }
+        let sx = 0, sy = 0, c = 0; for (let k = -sm; k <= sm; k++) { let j = i + k; if (closed) j = (j + n) % n; else if (j < 0 || j >= n) continue; sx += pts[j][0]; sy += pts[j][1]; c++; } out.push([sx / c, sy / c]); } return out; };
+    const magAt = q => { const x = clamp(Math.round(q[0]), 0, w - 1), y = clamp(Math.round(q[1]), 0, h - 1); return mag[y * w + x]; };
+    for (const c of chains(gr, arm, 40)) { const L = plen(c.pts); if (L < minL * 0.5) continue; let sc = 0; for (const q of c.pts) sc += magAt(q); sc = sc / c.pts.length * L; if (sc < hi * minL * X.score) continue; const p = BZ.fromPolyline(smooth(c.pts, c.closed), { tol, lineTol: tol * 1.2, arm, corner, smooth: arm * 0.5, minStraight: 12 * px, closed: c.closed, forced: [] }); if (!p) continue; paths.push(p); }
+    for (const p of paths) if (back !== 1) for (const nd of p.n) { nd.x *= back; nd.y *= back; if (nd.i) nd.i = [nd.i[0] * back, nd.i[1] * back]; if (nd.o) nd.o = [nd.o[0] * back, nd.o[1] * back]; }
+    return { paths, lw: 1.5 * px * back, darkBg: false, mode: 'photo', parts: 1, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: 0, solids: 0, photo: o, dbg: opts.debug ? { w, h, edges: E } : null }; }
+  // one entry point: line art (unchanged) or photo
+  const run = (img, opts = {}) => opts.kind === 'photo' ? photo(img, opts.photo || {}) : lineArt(img, opts);
+  return { VERSION, run, lineArt, photo, PHOTO0, outerCut, grey, otsu, blur, thin, edt, fillHoles, contoursIso, lineWidth, skelGraph, area };
 })();
 if (typeof module !== 'undefined') module.exports = T;
