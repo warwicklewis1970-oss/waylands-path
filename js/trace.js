@@ -429,6 +429,9 @@ const T = (() => {
     while (st.length) { const i = st.pop(); for (const nb of [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1]) { const j = i + nb; if (j >= 0 && j < N && !E[j] && nms[j] >= lo) { E[j] = 1; st.push(j); } } }
     // 6) one pixel wide lines, then the same line graph as line art
     for (let x = 0; x < w; x++) { E[x] = 0; E[(h - 1) * w + x] = 0; } for (let y = 0; y < h; y++) { E[y * w] = 0; E[y * w + w - 1] = 0; }
+    // v5.3 'Trace an area': thresholds stay those of the whole photo (so skin / fur texture is not promoted), only edges in the area are kept
+    if (opts.area) { const A = opts.area, m = 3, ax0 = Math.max(0, Math.floor(A.x0 * P.sc) - m), ay0 = Math.max(0, Math.floor(A.y0 * P.sc) - m), ax1 = Math.min(w - 1, Math.ceil(A.x1 * P.sc) + m), ay1 = Math.min(h - 1, Math.ceil(A.y1 * P.sc) + m);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < ax0 || x > ax1 || y < ay0 || y > ay1) E[y * w + x] = 0; }
     thin(E, w, h); tidySkeleton(E, w, h);
     const gr = skelGraph(E, w, h), px = diag / 1250, arm = 3 * px, minL = (X.minL0 + o.minLen * X.minLK) * px;
     mergeDeg2(gr); prune(gr, minL * 0.35, minL * 0.6); collapseClose(gr, 1.5 * px); mergeDeg2(gr);

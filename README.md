@@ -39,6 +39,13 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.3 - Clone with a lasso, Flip, Trace an area
+- **Clone**: choose **👆 Tap one**, **➰ Lasso** (draw a loop with one finger) or **⬚ Box** (drag a rectangle), or **▣ Select all**. Everything inside (etch lines, cut outs, hanging holes) is picked as **one group**. Lines partly inside come whole; tick **Trim lines at the edge** to cut them at the loop instead (cut outs and holes always stay whole). The outer cut is never included.
+- **+ Clone** copies the whole group; move, size (keeps shape), turn, nudge, **↔ Flip horizontal**, **↕ Flip vertical**, **↺ Reset to original** (also undoes flips) and **🗑 Delete copy** all work on the group. Holes stay true circles. Groups go into **Recent clones** (last 3, with a picture) to drop into other projects.
+- **Photo: 🔍 Trace an area in more detail** (Trace section): draw round one part (a face, the eyes) and only that part is traced again from the full-size photo with more lines and points (own Detail / Smoothness / Ignore small bits, live orange preview). **♻ Replace lines inside** (lines crossing the edge are cut there) or **＋ Add to the lines**. One Undo.
+- New photo traces start richer: Detail 6, Smoothness 4, Ignore small bits 3 (was 5 / 5 / 4). Photos already traced keep their saved lines and settings.
+- Laser: nothing changes unless you use these. Copies, flipped copies and area lines burn like any other lines (etch first; holes and cut outs inside the outer cut before it). A copy placed outside the outer cut is its own outline and is cut after it.
+
 ## v5.2 - Photo to line drawing, faint photo behind
 - Home → **📷 Turn a photo into a line drawing** (or Menu → Picture → Photo). Pets, people, buildings, objects.
 - Trace section: choose **✏️ A line drawing** or **📷 A photo**. Photo sliders: **Detail**, **Smoothness**, **Ignore small bits**, plus **↺ Reset to defaults**. The last values are remembered.

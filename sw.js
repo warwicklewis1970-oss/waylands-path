@@ -1,6 +1,6 @@
 // Waylands Path service worker: cache everything for offline use. Bump VERSION on every release.
-const VERSION = 'waylands-path-v5.2';
-const ASSETS = ['./', './index.html', './style.css', './manifest.webmanifest', './version.json', './js/bez.js', './js/trace.js', './js/svgin.js', './js/laser.js', './js/app.js', './js/tools2.js', './js/tools4.js', './js/hole.js', './js/tabs.js', './js/clone.js', './js/worker.js', './js/sync.js',
+const VERSION = 'waylands-path-v5.3';
+const ASSETS = ['./', './index.html', './style.css', './manifest.webmanifest', './version.json', './js/bez.js', './js/trace.js', './js/svgin.js', './js/laser.js', './js/app.js', './js/tools2.js', './js/tools4.js', './js/hole.js', './js/tabs.js', './js/clone.js', './js/tarea.js', './js/worker.js', './js/sync.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k.startsWith('waylands-path-')).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

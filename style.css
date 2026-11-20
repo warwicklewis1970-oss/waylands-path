@@ -189,4 +189,4 @@ body.home #home{place-items:start center;overflow-y:auto}
 
 /* v5.2 faint photo toggle on the drawing */
 .bgbtn{position:absolute;right:8px;bottom:8px;min-height:40px;padding:4px 12px;border-radius:20px;background:rgba(22,35,43,.85);color:#fff;font-size:14px;z-index:3}.bgbtn.on{background:var(--acc);color:#082522;font-weight:600}
-#tkind{margin-bottom:8px}#tkind button{font-size:15px;min-height:48px}
+#tkind{margin-bottom:8px}#cnMode{margin-bottom:6px}#cnMode button{font-size:15px;min-height:46px}#taMode,#taPut{margin:4px 0}#taMode button,#taPut button{font-size:14px;min-height:44px}#taCtl[hidden]{display:none}.cnflip button{flex:1 1 0;min-height:46px;font-size:14px}.cnsel{display:flex;gap:8px;align-items:center;margin-bottom:6px}.cnsel button{min-height:44px;font-size:14px;padding:2px 12px;flex:0 0 auto}.cnsel .chk{font-size:14px;min-height:44px;display:flex;align-items:center;gap:6px}.cnsel[hidden]{display:none}#cnMode button{padding:4px 6px}#cnAll{border-left:1px solid var(--line)}#tkind button{font-size:15px;min-height:48px}

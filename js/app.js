@@ -1,13 +1,14 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.2';
+const APP_VERSION = 'v5.3';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
 // ---------- state ----------
 // v5.2 photo tracing: last-used photo sliders, remembered on this device for every new photo
-const PHOTO_KEY = 'wp-photo1', PHOTO_DEF = () => ({ detail: 5, smooth: 5, minLen: 4 });
-function photoLast() { try { const v = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (v) return Object.assign(PHOTO_DEF(), v); } catch (e) { /* */ } return PHOTO_DEF(); }
+// v5.3: richer photo defaults (more lines and points) for NEW traces; projects already traced keep their own saved settings and lines
+const PHOTO_KEY = 'wp-photo1', PHOTO_DEF = () => ({ detail: 6, smooth: 4, minLen: 3 });
+function photoLast() { try { const v = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (v && !(v.detail === 5 && v.smooth === 5 && v.minLen === 4)) return Object.assign(PHOTO_DEF(), v); } catch (e) { /* */ } return PHOTO_DEF(); }
 const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detail: 5, corners: 5, mode: 'auto', faint: 4, straighten: true, kind: 'line', photo: photoLast() },
   widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, photoOp: 25, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
 function SHEET0() { return { on: false, W: 200, H: 200, margin: 5, gap: 5, nx: 1, ny: 1, place: 'centre' }; }
@@ -86,6 +87,7 @@ function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.widt
   if (window.HH) HH.paint(px);
   if (window.TB) TB.paint(px);
   if (window.CN) CN.paint(px);
+  if (window.TA) TA.paint(px);
   if (overlay && overlay.box) { const [a, b] = overlay.box; ctx.fillStyle = 'rgba(25,113,194,0.08)'; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = px; ctx.setLineDash([5 * px, 4 * px]); ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.setLineDash([]); }
   if (overlay && overlay.pt) { ctx.fillStyle = '#e8590c'; ctx.beginPath(); ctx.arc(overlay.pt[0], overlay.pt[1], 5 * px, 0, 7); ctx.fill(); } }
 const isSel = (pi, j) => sel.has(pi + ':' + j);
@@ -356,7 +358,7 @@ function penDrag(g, u) { const p = S.paths[pen.pi], nd = p.n[g.j], dx = u[0] - n
 function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.length < 2) S.paths.splice(pen.pi, 1); pen = null; changed(); }
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
-function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.CN) CN.onTool(t); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.CN) CN.onTool(t); if (window.TA) TA.onTool(t, prev); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); draw(); }
 document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool));
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
@@ -393,6 +395,7 @@ cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => 
 cv.addEventListener('wheel', e => { e.preventDefault(); const p = cvPt(e), k = Math.exp(-e.deltaY * 0.0015), ns = Math.max(0.05, Math.min(80, view.s * k)), kk = ns / view.s; view.tx = p[0] - (p[0] - view.tx) * kk; view.ty = p[1] - (p[1] - view.ty) * kk; view.s = ns; draw(); }, { passive: false });
 function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap: null };
   if (window.CN && tool === 'clone') return CN.down(e, p, u, base); // v5.0 clone
+  if (window.TA && tool === 'tarea') return TA.down(e, p, u, base); // v5.3 trace an area
   if (window.TB && tool === 'shapes' && TB.on) return TB.down(e, p, u, base); // v4.8 tabs
   if (window.HH && tool === 'shapes' && HH.on) return HH.down(e, p, u, base); // v4.7 hanging hole
   if (window.HH && tool === 'cutout' && HH.hitHole(u, tolPx(e) * 0.6) >= 0) return HH.down(e, p, u, base); // drag a hole as a whole circle
@@ -411,6 +414,7 @@ function startGesture(e, p, u) { const base = { p0: p, u0: u, moved: false, snap
   return Object.assign(base, { kind: 'box', h: sh }); }
 function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.hypot(p[0] - g.p0[0], p[1] - g.p0[1]) < (e.pointerType === 'mouse' ? 3 : 7)) return; g.moved = true;
   if (g.cn) { CN.move(g, p, u, e); return; }
+  if (g.ta) { TA.move(g, p, u, e); return; }
   if (g.tb) { TB.move(g, p, u, e); return; }
   if (g.hh) { HH.move(g, p, u, e); return; }
   if (g.t2) { T2.move(g, p, u, e); return; }
@@ -425,6 +429,7 @@ function moveGesture(g, p, e) { const u = toU(p[0], p[1]); if (!g.moved && Math.
   if (g.kind === 'box') { overlay = { box: [g.u0, u] }; draw(); } }
 function endGesture(g, e) { overlay = null; const u = g.last || g.u0;
   if (g.cn) { CN.up(g, e); return; }
+  if (g.ta) { TA.up(g, e); return; }
   if (g.tb) { TB.up(g, e); return; }
   if (g.hh) { HH.up(g, e); return; }
   if (g.t2) { T2.up(g, e); return; }
@@ -575,7 +580,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: 📷 turn a photo into a line drawing, faint photo behind the lines'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: ➰ Clone a group with a lasso, ↔ flip, 🔍 trace part of a photo in more detail'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -622,4 +627,4 @@ $('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromFor
 $('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
 setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
-window.WP = { paint, get paintN() { return paintN; }, holeCount, innerCuts, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { photoLast, paint, get paintN() { return paintN; }, holeCount, innerCuts, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
