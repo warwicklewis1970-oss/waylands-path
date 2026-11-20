@@ -1,4 +1,6 @@
-// Waylands Path v5.3 - Clone tool (v5.3: Lasso / Box / Select all picks a whole group; optional trim at the lasso edge)
+// Waylands Path v5.4 - Clone tool (v5.4: a drawn Lasso / Box stays as an adjustable area - resize, move, live count - and nothing is
+// picked or copied until '+ Clone this area')
+// v5.3 - Clone tool (v5.3: Lasso / Box / Select all picks a whole group; optional trim at the lasso edge)
 // v5.1 - Clone tool: tap a line, shape, cut out or hanging hole, Clone it, then size, turn and move the copy.
 // Every picked item keeps p.xf = { g, o, b, c, sx, sy, r, dx, dy, sig, copy } on its path(s):
 //   o = geometry when cloned (or when first changed here) - "Reset to original" goes back to it exactly
@@ -8,7 +10,7 @@
 'use strict';
 window.CN = (() => {
   const $ = id => document.getElementById(id), r3 = v => Math.round(v * 1000) / 1000, f1 = v => (Math.round(v * 10) / 10).toString();
-  const C = { sel: [], g: null, virt: null, drag: null, grp: false, mode: ['tap', 'lasso', 'box'].includes(localStorage.getItem('wp-cnMode')) ? localStorage.getItem('wp-cnMode') : 'tap', trim: localStorage.getItem('wp-cnTrim') === '1', lock: localStorage.getItem('wp-cnLock') !== '0', step: +(localStorage.getItem('wp-cnStep') || 1) || 1 };
+  const C = { sel: [], g: null, virt: null, drag: null, area: null, grp: false, mode: ['tap', 'lasso', 'box'].includes(localStorage.getItem('wp-cnMode')) ? localStorage.getItem('wp-cnMode') : 'tap', trim: localStorage.getItem('wp-cnTrim') === '1', lock: localStorage.getItem('wp-cnLock') !== '0', step: +(localStorage.getItem('wp-cnStep') || 1) || 1 };
   const tol = e => (e && e.pointerType === 'mouse' ? 12 : 24) / view.s;
   const live = () => C.sel.filter(p => S.paths.includes(p));
   const newG = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -43,7 +45,7 @@ window.CN = (() => {
     let inside = null, ia = Infinity; for (const p of S.paths) { if (!p.cut || !p.z || p.hole || isOuter(p)) continue; const f = BZ.flatten(p, 0.5), b = BZ.bbox([p]); if (BZ.inside(f, u) && b.w * b.h < ia) { ia = b.w * b.h; inside = p; } }
     if (inside && (!best || best.d > t * 0.45)) return { list: [inside] }; // a tap inside a cut out picks it unless right on a line
     if (best) return etchR(); if (edge) return { outer: true }; return null; }
-  function choose(list, grp) { C.virt = null; C.grp = !!grp; C.sel = list.slice(); C.g = list[0] && list[0].xf ? list[0].xf.g : null; panel(); draw(); }
+  function choose(list, grp) { C.virt = null; C.area = null; C.grp = !!grp; C.sel = list.slice(); C.g = list[0] && list[0].xf ? list[0].xf.g : null; panel(); draw(); }
   // ---------- v5.3 area selection: Lasso (free loop), Box (rectangle), Select all ----------
   const clean = p => { const q = BZ.clone(Object.assign({}, p, { xf: undefined })); delete q.xf; delete q.tabs; delete q.tabBase; delete q._tsig; return q; };
   const pbox = pts => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const q of pts) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } return { x0, y0, x1, y1 }; };
@@ -69,17 +71,45 @@ window.CN = (() => {
   function counts(list) { let e = 0, c = 0, h = 0; for (const p of list) { if (p.hole) h++; else if (p.cut) c++; else e++; } const pl = (n, a, b) => n ? `${n} ${n === 1 ? a : b}` : '';
     return [pl(e, 'line', 'lines'), pl(c, 'cut out', 'cut outs'), pl(h, 'hole', 'holes')].filter(Boolean).join(', ') || 'nothing'; }
   const OUTER_NOTE = 'The outside cut line is never included - it follows your design.';
-  function selectArea(poly) { C.last = poly; const lp = BZ.fromPoints(poly, true), pb = pbox(poly); let outerHit = false; const whole = [], pieces = []; let trimmed = 0;
+  function pickArea(poly) { const lp = BZ.fromPoints(poly, true), pb = pbox(poly); let outerHit = false; const whole = [], pieces = []; let trimmed = 0;
     for (const p of S.paths) { if (!p.hole && p.n.length < 2) continue; if (!touches(p, poly, lp, pb)) continue; if (isOuter(p)) { outerHit = true; continue; }
       if (C.trim && !p.cut && !p.hole) { const r = trimPath(p, poly, lp); if (r.length !== 1 || JSON.stringify(r[0].n) !== JSON.stringify(p.n)) trimmed++; pieces.push(...r); } else whole.push(p); }
+    return { whole, pieces, trimmed, outerHit }; }
+  function selectArea(poly) { C.last = poly; const { whole, pieces, trimmed, outerHit } = pickArea(poly);
     const note = outerHit ? ' ' + OUTER_NOTE : '';
     if (C.trim) { const v = whole.map(clean).concat(pieces); if (!v.length) { C.sel = []; C.virt = null; panel(); draw(); toast('Nothing inside - draw round some lines.' + note, 3500); return; }
       C.sel = []; C.g = null; C.virt = v; C.grp = true; panel(); draw(); toast(`Picked ${counts(v)}${trimmed ? ` (${trimmed} trimmed at the edge)` : ''}. Tap + Clone to copy it.${note}`, 4000); return; }
     if (!whole.length) { C.sel = []; C.virt = null; panel(); draw(); toast('Nothing inside - draw round some lines.' + note, 3500); return; }
     choose(whole, true); toast(`Picked ${counts(whole)} as one group. Tap + Clone to copy it.${note}`, 4000); }
+  function setMode(m) { C.mode = m; localStorage.setItem('wp-cnMode', m); C.drag = null; C.area = null; panel(); draw(); }
+  // ---------- v5.4 adjustable area: the loop / box stays on screen with handles until '+ Clone this area' ----------
+  // Shared with Trace an area. Corner squares resize both ways (opposite corner stays put), side dots one way, drag inside to move.
+  const HN = [['nw', 0, 0, 1, 1], ['ne', 1, 0, 1, 1], ['se', 1, 1, 1, 1], ['sw', 0, 1, 1, 1], ['n', .5, 0, 0, 1], ['e', 1, .5, 1, 0], ['s', .5, 1, 0, 1], ['w', 0, .5, 1, 0]];
+  function areaHandles(poly) { const b = pbox(poly), pad = 10 / view.s, x0 = b.x0 - pad, y0 = b.y0 - pad, x1 = b.x1 + pad, y1 = b.y1 + pad;
+    return { b, box: [x0, y0, x1, y1], hs: HN.map(([id, fx, fy, ax, ay]) => ({ id, ax, ay, at: [x0 + (x1 - x0) * fx, y0 + (y1 - y0) * fy], anc: [b.x0 + (b.x1 - b.x0) * (1 - fx), b.y0 + (b.y1 - b.y0) * (1 - fy)], raw: [b.x0 + (b.x1 - b.x0) * fx, b.y0 + (b.y1 - b.y0) * fy] })) }; }
+  function areaHit(poly, u, e) { if (!poly) return null; const H = areaHandles(poly), r = (e && e.pointerType === 'mouse' ? 12 : 26) / view.s;
+    let best = null, bd = r; for (const h of H.hs) { const d = Math.hypot(u[0] - h.at[0], u[1] - h.at[1]); if (d <= bd) { bd = d; best = h; } }
+    if (best) return { h: best, poly0: poly.map(q => q.slice()) };
+    const [x0, y0, x1, y1] = H.box; if (u[0] >= x0 && u[0] <= x1 && u[1] >= y0 && u[1] <= y1) return { h: { id: 'move' }, poly0: poly.map(q => q.slice()) }; return null; }
+  function areaDrag(st, u0, u) { const h = st.h; if (h.id === 'move') { const dx = u[0] - u0[0], dy = u[1] - u0[1]; return st.poly0.map(q => [q[0] + dx, q[1] + dy]); }
+    const min = 24 / view.s, A = h.anc, f = i => { const s0 = h.raw[i] - A[i]; if (Math.abs(s0) < 1e-9) return 1; return Math.max(min / Math.abs(s0), (u[i] - (h.at[i] - h.raw[i]) - A[i]) / s0); }; // the loop's own opposite edge stays put; the finger keeps its grip on the square
+    const fx = h.ax ? f(0) : 1, fy = h.ay ? f(1) : 1; return st.poly0.map(q => [A[0] + (q[0] - A[0]) * fx, A[1] + (q[1] - A[1]) * fy]); }
+  function areaPaint(poly, px, col, label) { const H = areaHandles(poly), [x0, y0, x1, y1] = H.box; ctx.save();
+    ctx.beginPath(); poly.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.fillStyle = col === '#e8590c' ? 'rgba(232,89,12,0.08)' : 'rgba(25,113,194,0.08)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2 * px; ctx.setLineDash([8 * px, 5 * px]); ctx.stroke();
+    ctx.lineWidth = 1 * px; ctx.setLineDash([3 * px, 4 * px]); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
+    for (const h of H.hs) { ctx.fillStyle = '#fff'; ctx.strokeStyle = col; ctx.lineWidth = 2.5 * px; ctx.beginPath(); if (h.ax && h.ay) ctx.rect(h.at[0] - 10 * px, h.at[1] - 10 * px, 20 * px, 20 * px); else ctx.arc(h.at[0], h.at[1], 9 * px, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    if (label) { ctx.font = `bold ${14 * px}px sans-serif`; const w = ctx.measureText(label).width + 14 * px, lx = (x0 + x1) / 2 - w / 2, ly = y0 - 36 * px; ctx.fillStyle = col; ctx.fillRect(lx, ly, w, 22 * px); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, (x0 + x1) / 2, ly + 11 * px); }
+    ctx.restore(); }
+  // the picked lines for the area now (cached until the area or the Trim choice changes)
+  function areaPick() { const A = C.area; if (!A) return null; const key = JSON.stringify(A.poly) + C.trim + S.paths.length; if (A.key !== key) { A.key = key; const r = pickArea(A.poly); A.pk = r; A.list = C.trim ? r.whole.concat(r.pieces) : r.whole; } return A.pk; }
+  function areaText() { const r = areaPick(); if (!r) return ''; const l = C.area.list; return l.length ? `${counts(l)} picked` : 'nothing inside yet'; }
+  function setArea(poly) { C.sel = []; C.virt = null; C.g = null; C.area = { poly: poly.map(q => q.slice()) }; areaPick(); panel(); draw(); }
+  function clearArea(msg) { C.area = null; panel(); draw(); if (msg) toast(msg); }
+  function cloneArea() { const A = C.area; if (!A) return; areaPick(); if (!A.list.length) { toast('Nothing inside the area yet - make it bigger or move it over some lines'); return; }
+    const poly = A.poly; C.area = null; selectArea(poly); doClone(); }
   function selectAll() { const list = S.paths.filter(p => (p.hole || p.n.length >= 2) && !isOuter(p)); if (!list.length) { toast('Nothing to pick yet' + (S.paths.length ? ' - ' + OUTER_NOTE : '')); return; }
-    choose(list, true); toast(`Picked the whole design: ${counts(list)}. ${S.paths.some(isOuter) ? OUTER_NOTE : ''}`, 4000); }
-  function setMode(m) { C.mode = m; localStorage.setItem('wp-cnMode', m); C.drag = null; panel(); draw(); }
+    const k = kmm(), b = bbOf(list.map(p => ({ n: p.n, z: p.z, hole: p.hole })), k), m = 2 / k; setArea([[b.x0 - m, b.y0 - m], [b.x1 + m, b.y0 - m], [b.x1 + m, b.y1 + m], [b.x0 - m, b.y1 + m]]);
+    toast(`The whole design is in the area: ${areaText()}. ${S.paths.some(isOuter) ? OUTER_NOTE + ' ' : ''}Tap + Clone this area to copy it.`, 4500); }
   // ---------- actions ----------
   function doClone() { const fromV = !!(C.virt && C.virt.length), list = fromV ? C.virt : live(); if (!list.length) { toast(C.mode === 'tap' ? 'Tap a line, shape or hole first, then Clone' : 'Draw round something first (or Select all), then Clone'); return; } C.virt = null;
     const k0 = begin(), off = 5 / k0, g = newG(), copies = list.map(p => { const q = BZ.clone(Object.assign({}, p, { xf: undefined })); delete q.xf; delete q.tabs; delete q.tabBase; delete q._tsig;
@@ -161,13 +191,16 @@ window.CN = (() => {
   function onBox(fr, u) { const B = fr.box, inTri = (a, b, c) => { const s = (p, q, r) => (p[0] - r[0]) * (q[1] - r[1]) - (q[0] - r[0]) * (p[1] - r[1]); const d1 = s(u, a, b), d2 = s(u, b, c), d3 = s(u, c, a); return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0)); }; return inTri(B[0], B[1], B[2]) || inTri(B[0], B[2], B[3]); }
   // ---------- gestures ----------
   function down(e, p, u, base) { const fr = frame(), hr = (e && e.pointerType === 'mouse' ? 12 : 26) / view.s, g = Object.assign(base, { cn: 'tap', tx: view.tx, ty: view.ty });
+    if (C.area) { const st = areaHit(C.area.poly, u, e); if (st) { g.cn = 'area'; g.st = st; const keep = st.poly0; g.restore = () => { if (C.area) { C.area.poly = keep; panel(); draw(); } }; } else g.cn = 'pan'; return g; } // v5.4: the area is being adjusted; one finger outside moves the picture
     if (fr) { const near = q => Math.hypot(u[0] - q[0], u[1] - q[1]) <= hr;
       const areaPick = C.mode !== 'tap' && !fr.list.every(q => q.xf && q.xf.copy); // v5.3: in Lasso / Box a drag over picked originals draws a new selection (copies still drag)
       const mode = near(fr.scl) ? 'scale' : (!fr.list.every(q => q.hole) && near(fr.rot)) ? 'rot' : (!areaPick && onBox(fr, u)) ? 'move' : null;
       if (mode) { g.cn = mode; g.k0 = kmm(); g.snap = snap(); g.snap._w = S.widthMm; C.g = prep(fr.list); const xf = fr.list[0].xf; g.v0 = { sx: xf.sx, sy: xf.sy, r: xf.r, dx: xf.dx, dy: xf.dy }; g.c = T(xf, xf.c[0], xf.c[1]); g.h0 = fr.scl; g.bb = bbOf(fr.list, g.k0); } }
     if (g.cn === 'tap' && C.mode !== 'tap') { g.cn = 'lasso'; g.pts = [u]; g.restore = () => { C.drag = null; draw(); }; }
     return g; }
-  function move(g, p, u) { if (g.cn === 'lasso') { if (C.mode === 'box') { const a = g.u0; C.drag = [a, [u[0], a[1]], u, [a[0], u[1]]]; }
+  function move(g, p, u) { if (g.cn === 'area') { if (C.area) { C.area.poly = areaDrag(g.st, g.u0, u); panel(); draw(); } return; }
+    if (g.cn === 'pan') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
+    if (g.cn === 'lasso') { if (C.mode === 'box') { const a = g.u0; C.drag = [a, [u[0], a[1]], u, [a[0], u[1]]]; }
       else { const l = g.pts[g.pts.length - 1]; if (Math.hypot(u[0] - l[0], u[1] - l[1]) * view.s >= 3) g.pts.push(u); C.drag = g.pts; } draw(); return; }
     if (g.cn === 'tap') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
     const list = live(); if (!list.length) return; const v = Object.assign({}, g.v0);
@@ -178,8 +211,9 @@ window.CN = (() => {
       else { const a = -g.v0.r * Math.PI / 180, dx = u[0] - g.c[0], dy = u[1] - g.c[1], lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a), pad = 6 / view.s;
         v.sx = Math.max(0.02, Math.min(50, (Math.abs(lx) - pad) / (g.bb.w / 2))) * Math.sign(g.v0.sx || 1); v.sy = Math.max(0.02, Math.min(50, (Math.abs(ly) - pad) / (g.bb.h / 2))) * Math.sign(g.v0.sy || 1); } }
     for (const q of list) Object.assign(q.xf, v); apply(list); keepScale(g.k0); panel(); draw(); }
-  function up(g, e) { if (g.cn === 'lasso') { const poly = C.drag; C.drag = null;
-      if (g.moved && poly && poly.length >= 3) { const b = pbox(poly); if ((b.x1 - b.x0) * view.s >= 12 && (b.y1 - b.y0) * view.s >= 12) { selectArea(poly.map(q => q.slice())); return; } }
+  function up(g, e) { if (g.cn === 'area' || g.cn === 'pan') { panel(); draw(); return; }
+    if (g.cn === 'lasso') { const poly = C.drag; C.drag = null;
+      if (g.moved && poly && poly.length >= 3) { const b = pbox(poly); if ((b.x1 - b.x0) * view.s >= 12 && (b.y1 - b.y0) * view.s >= 12) { setArea(poly); toast(`${areaText()}. Drag the squares to make the area bigger or smaller, drag inside to move it. Nothing is copied until you tap + Clone this area.`, 4500); return; } }
       draw(); if (g.moved) return; g.cn = 'tap'; }
     if (g.cn === 'tap') { if (g.moved) return; C.virt = null; const r = pick(g.u0, e);
       if (r && r.outer) { C.sel = []; panel(); draw(); toast('The outside cut line can\'t be cloned or changed here - it follows your design. Rebuild it with Cut out › Outer cut.', 4500); return; }
@@ -193,8 +227,11 @@ window.CN = (() => {
     ['cnGo', 'cnW', 'cnH', 'cnPct', 'cnRot', 'cnRm', 'cnRp', 'cnR90', 'cnFH', 'cnFV'].forEach(id => { const el = $(id); if (el) el.disabled = !list.length; }); document.querySelectorAll('[data-cnnudge]').forEach(b => b.disabled = !list.length);
     $('cnReset').disabled = !changedOne; $('cnDel').disabled = !isCopy; const hole = list.length && list.every(p => p.hole); ['cnRot', 'cnRm', 'cnRp', 'cnR90'].forEach(id => { const el = $(id); if (el && hole) el.disabled = true; });
     $('cnLock').checked = C.lock || !!hole; $('cnLock').disabled = !!hole; $('cnStep').value = String(C.step);
+    { const aa = $('cnAreaActs'), ac = box.querySelector('.cnacts'); if (aa) aa.hidden = !C.area; if (ac) ac.hidden = !!C.area; }
+    if (C.area) { areaPick(); const r = C.area.pk, n = C.area.list.length; $('cnAreaGo').disabled = !n; if ($('cnEdit')) $('cnEdit').hidden = true; { const rb = $('cnRecent'); if (rb) rb.hidden = true; }
+      $('cnHint').innerHTML = `<b>${n ? areaText() : 'Nothing inside yet'}</b> (orange)${C.trim && r.trimmed ? `, ${r.trimmed} cut at the edge` : ''}. Drag the <b>squares</b> to make the area bigger or smaller, drag <b>inside</b> it to move it. Nothing is copied until you tap <b>+ Clone this area</b>.${r.outerHit ? ' ' + OUTER_NOTE : ''}`; return; }
     if (!list.length && C.virt && C.virt.length) { $('cnGo').disabled = false; $('cnHint').innerHTML = `<b>Picked:</b> ${counts(C.virt)} (lines trimmed at the edge; cut outs and holes stay whole). Tap <b>+ Clone</b> to copy it, then move, size and turn the copy.`; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
-    if (!list.length && C.mode !== 'tap') { $('cnHint').innerHTML = (C.mode === 'lasso' ? '<b>Lasso:</b> draw a loop round the part you want with one finger' : '<b>Box:</b> drag a box over the part you want with one finger') + ' - everything inside is picked as one group' + (C.trim ? ' (lines are cut at the edge)' : ' (lines partly inside are taken whole)') + '. Or tap <b>▣ All</b> for the whole design. Two fingers move or zoom the picture.' + (recents().length ? ' Or tap a <b>Recent clone</b> below.' : ''); ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
+    if (!list.length && C.mode !== 'tap') { $('cnHint').innerHTML = (C.mode === 'lasso' ? '<b>Lasso:</b> draw a loop round the part you want with one finger' : '<b>Box:</b> drag a box over the part you want with one finger') + '. It stays on screen so you can resize or move it and see what is inside' + (C.trim ? ' (lines are cut at the edge)' : ' (lines partly inside are taken whole)') + ' - nothing is copied until you tap <b>+ Clone this area</b>. Or tap <b>▣ All</b> for the whole design. Two fingers move or zoom the picture.' + (recents().length ? ' Or tap a <b>Recent clone</b> below.' : ''); ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
     if (!list.length) { $('cnHint').innerHTML = '<b>Clone:</b> tap a line, shape, cut out or hanging hole to pick it, then tap <b>+ Clone</b>.' + (recents().length ? ' Or tap one of your <b>Recent clones</b> below to place it again.' : '') + ' Two fingers move or zoom the picture.'; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
     const k = kmm(), bb = bbOf(list, k), sx = xf ? xf.sx : 1, sy = xf ? xf.sy : 1, W = bb.w * Math.abs(sx) * k, H = bb.h * Math.abs(sy) * k;
     set('cnW', hole ? r3(list[0].hole.d) : f1(W)); set('cnH', hole ? r3(list[0].hole.d) : f1(H)); set('cnPct', Math.round(Math.abs(sx) * 1000) / 10); set('cnRot', xf ? xf.r : 0);
@@ -204,6 +241,8 @@ window.CN = (() => {
     let dy = 0, dx = 0; if (y1 > r.height - 30) dy = Math.max(r.height - 30 - y1, 50 - y0); else if (y0 < 40) dy = 40 - y0; if (x1 > r.width - 20) dx = Math.max(r.width - 20 - x1, 20 - x0); else if (x0 < 20) dx = 20 - x0; if (dx || dy) { view.tx += dx; view.ty += dy; draw(); } }
   function paint(px) { if (tool !== 'clone') return;
     if (C.drag && C.drag.length > 1) { ctx.save(); ctx.beginPath(); C.drag.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.fillStyle = 'rgba(25,113,194,0.10)'; ctx.fill(); ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 2 * px; ctx.setLineDash([8 * px, 5 * px]); ctx.stroke(); ctx.restore(); }
+    if (C.area) { areaPick(); const k = kmm(); ctx.save(); ctx.strokeStyle = 'rgba(232,89,12,0.95)'; ctx.lineWidth = 3.5 * px; ctx.lineCap = ctx.lineJoin = 'round'; ctx.beginPath(); for (const p of C.area.list) { if (p.hole) { const R = holeR(p.hole, k); ctx.moveTo(p.hole.cx + R, p.hole.cy); ctx.arc(p.hole.cx, p.hole.cy, R, 0, Math.PI * 2); } else tracePath(p); } ctx.stroke(); ctx.restore();
+      areaPaint(C.area.poly, px, '#e8590c', areaText()); return; }
     if (C.virt && C.virt.length) { const k = kmm(); ctx.save(); ctx.strokeStyle = 'rgba(25,113,194,0.9)'; ctx.lineWidth = 4 * px; ctx.lineCap = ctx.lineJoin = 'round'; ctx.beginPath(); for (const p of C.virt) { if (p.hole) { const R = holeR(p.hole, k); ctx.moveTo(p.hole.cx + R, p.hole.cy); ctx.arc(p.hole.cx, p.hole.cy, R, 0, Math.PI * 2); } else tracePath(p); } ctx.stroke(); ctx.restore(); }
     const fr = frame(); if (!fr) return; ctx.save();
     ctx.strokeStyle = 'rgba(25,113,194,0.9)'; ctx.lineWidth = 4 * px; ctx.beginPath(); for (const p of fr.list) { if (p.hole) { const R = holeR(p.hole, fr.k); ctx.moveTo(p.hole.cx + R, p.hole.cy); ctx.arc(p.hole.cx, p.hole.cy, R, 0, Math.PI * 2); } else tracePath(p); } ctx.stroke();
@@ -212,11 +251,12 @@ window.CN = (() => {
     if (!fr.list.every(q => q.hole)) { ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.moveTo(fr.top[0], fr.top[1]); ctx.lineTo(fr.rot[0], fr.rot[1]); ctx.stroke(); dot(fr.rot, '⟳'); }
     dot(fr.scl, '◢'); const xf = fr.list[0].xf; if (xf && xf.r) { ctx.font = `bold ${12 * px}px sans-serif`; const t = `${xf.r}°`, w = ctx.measureText(t).width; ctx.fillStyle = 'rgba(25,113,194,0.92)'; ctx.fillRect(fr.rot[0] + 16 * px, fr.rot[1] - 9 * px, w + 8 * px, 18 * px); ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(t, fr.rot[0] + 20 * px, fr.rot[1]); }
     ctx.restore(); }
-  function onTool(t) { if (t !== 'clone') { C.sel = []; C.virt = null; C.drag = null; } panel(); }
+  function onTool(t) { if (t !== 'clone') { C.sel = []; C.virt = null; C.drag = null; C.area = null; } panel(); }
   function afterUndo() { const g = C.g; C.sel = g ? S.paths.filter(p => p.xf && p.xf.g === g) : []; panel(); }
   function wire() { if (!$('cnBox')) return; const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
     on('cnGo', doClone); on('cnAll', selectAll); document.querySelectorAll('[data-cnmode]').forEach(b => b.onclick = () => setMode(b.dataset.cnmode));
-    if ($('cnTrim')) $('cnTrim').onchange = () => { C.trim = $('cnTrim').checked; localStorage.setItem('wp-cnTrim', C.trim ? '1' : '0'); panel(); }; on('cnReset', reset); on('cnDel', delCopy); on('cnDone', () => setTool('sel'));
+    if ($('cnTrim')) $('cnTrim').onchange = () => { C.trim = $('cnTrim').checked; localStorage.setItem('wp-cnTrim', C.trim ? '1' : '0'); panel(); draw(); };
+    on('cnAreaGo', cloneArea); on('cnAreaAgain', () => clearArea(C.mode === 'box' ? 'Drag a new box' : 'Draw a new loop')); on('cnAreaCancel', () => clearArea('Cancelled - nothing was copied')); on('cnReset', reset); on('cnDel', delCopy); on('cnDone', () => setTool('sel'));
     on('cnFH', () => flip('h')); on('cnFV', () => flip('v')); on('cnRm', () => setRot(-15, true)); on('cnRp', () => setRot(15, true)); on('cnR90', () => setRot(90, true));
     const ch = (id, f) => { const el = $(id); if (!el) return; el.addEventListener('input', () => { el._typing = true; }); el.addEventListener('change', () => { el._typing = false; f(parseFloat(el.value)); panel(); }); el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); }); };
     ch('cnW', v => setW(v, 'w')); ch('cnH', v => setW(v, 'h')); ch('cnPct', setPct); ch('cnRot', v => setRot(v, false));
@@ -224,5 +264,5 @@ window.CN = (() => {
     $('cnStep').onchange = () => { C.step = +$('cnStep').value || 1; localStorage.setItem('wp-cnStep', String(C.step)); };
     document.querySelectorAll('[data-cnnudge]').forEach(b => b.onclick = () => { const [x, y] = b.dataset.cnnudge.split(',').map(Number); nudge(x, y); }); panel(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  return { C, flip, touches, pbox, selectArea, selectAll, setMode, trimPath, counts, down, move, up, paint, panel, onTool, afterUndo, doClone, recents, placeRecent, remember, reset, delCopy, setW, setPct, setRot, nudge, pick, choose, frame, isOuter };
+  return { C, flip, touches, pbox, pickArea, setArea, cloneArea, clearArea, areaHit, areaDrag, areaPaint, areaPick, selectArea, selectAll, setMode, trimPath, counts, down, move, up, paint, panel, onTool, afterUndo, doClone, recents, placeRecent, remember, reset, delCopy, setW, setPct, setRot, nudge, pick, choose, frame, isOuter };
 })();

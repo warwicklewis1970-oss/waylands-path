@@ -39,6 +39,13 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.4 - The lasso waits for you
+- In **Clone**, after drawing a **➰ Lasso** loop or a **⬚ Box** (or tapping **▣ All**), the area stays on screen with white squares round it. Nothing is picked or copied yet.
+- Drag a **corner square** to make the area bigger or smaller, a **side dot** to change just the width or height, or drag **inside** it to move it. The lines inside turn orange and the panel and the label over the area show how many are picked (for example "12 lines picked").
+- **+ Clone this area** makes the copy (then size / turn / flip / Reset / Delete / Done as before). **➰ Draw again** clears the area so you can draw a new one. **✕ Cancel** drops it with no change.
+- **Trace an area** has the same squares: resize or move the loop and it is traced again before you tap **✓ Use these lines**.
+- Laser files: unchanged. A copy made with + Clone this area burns byte-for-byte the same as v5.3 for the same area.
+
 ## v5.3 - Clone with a lasso, Flip, Trace an area
 - **Clone**: choose **👆 Tap one**, **➰ Lasso** (draw a loop with one finger) or **⬚ Box** (drag a rectangle), or **▣ Select all**. Everything inside (etch lines, cut outs, hanging holes) is picked as **one group**. Lines partly inside come whole; tick **Trim lines at the edge** to cut them at the loop instead (cut outs and holes always stay whole). The outer cut is never included.
 - **+ Clone** copies the whole group; move, size (keeps shape), turn, nudge, **↔ Flip horizontal**, **↕ Flip vertical**, **↺ Reset to original** (also undoes flips) and **🗑 Delete copy** all work on the group. Holes stay true circles. Groups go into **Recent clones** (last 3, with a picture) to drop into other projects.

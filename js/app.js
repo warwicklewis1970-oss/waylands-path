@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.3';
+const APP_VERSION = 'v5.4';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -580,7 +580,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: ➰ Clone a group with a lasso, ↔ flip, 🔍 trace part of a photo in more detail'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: ➰ lasso stays on screen - resize it, see what is inside, then + Clone this area'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;

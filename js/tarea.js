@@ -1,4 +1,5 @@
-// Waylands Path v5.3 - Trace an area: draw a loop (or box) round one part of the photo and only that part is traced again,
+// Waylands Path v5.4: the loop stays on screen with resize squares (like Clone); after each change the preview is traced again.
+// v5.3 - Trace an area: draw a loop (or box) round one part of the photo and only that part is traced again,
 // with more lines and points (its own Detail / Smoothness / Ignore small bits). The new lines can Replace the lines inside the
 // loop (lines crossing the edge are cut there, the outside parts stay) or be Added. One Undo step. Nothing changes until "Use these lines".
 // The area is traced from the whole photo at full stored size, so edge strength is judged against the whole photo (skin or fur
@@ -12,10 +13,13 @@ window.TA = (() => {
   function open() { if (!can()) { toast('Open a photo first'); return; } if (window.closeMenu) closeMenu(); setTool('tarea'); }
   function onTool(t, prev) { if (t !== 'tarea') { A.poly = null; A.prev = null; A.drag = null; A.seq++; } panel(); }
   // ---------- drawing the loop (one finger; two fingers still move / zoom the picture) ----------
-  function down(e, p, u, base) { return Object.assign(base, { ta: 1, pts: [u], restore: () => { A.drag = null; draw(); } }); }
-  function move(g, p, u) { if (A.mode === 'box') { const a = g.u0; A.drag = [a, [u[0], a[1]], u, [a[0], u[1]]]; }
+  function down(e, p, u, base) { if (A.poly) { const st = CN.areaHit(A.poly, u, e); if (st) return Object.assign(base, { ta: 'edit', st, restore: () => { A.poly = st.poly0; draw(); } }); return Object.assign(base, { ta: 'pan', tx: view.tx, ty: view.ty }); }
+    return Object.assign(base, { ta: 1, pts: [u], restore: () => { A.drag = null; draw(); } }); }
+  function move(g, p, u) { if (g.ta === 'edit') { A.poly = CN.areaDrag(g.st, g.u0, u); A.prev = null; A.red = null; A.seq++; A.busy = false; panel(); draw(); return; }
+    if (g.ta === 'pan') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; } if (A.mode === 'box') { const a = g.u0; A.drag = [a, [u[0], a[1]], u, [a[0], u[1]]]; }
     else { const l = g.pts[g.pts.length - 1]; if (Math.hypot(u[0] - l[0], u[1] - l[1]) * view.s >= 3) g.pts.push(u); A.drag = g.pts; } draw(); }
-  function up(g) { const poly = A.drag; A.drag = null; if (!g.moved || !poly || poly.length < 3) { draw(); if (!g.moved) toast(A.mode === 'box' ? 'Drag a box over the part to trace' : 'Draw a loop round the part to trace'); return; }
+  function up(g) { if (g.ta === 'edit') { if (g.moved) run(); return; } if (g.ta === 'pan') return;
+    const poly = A.drag; A.drag = null; if (!g.moved || !poly || poly.length < 3) { draw(); if (!g.moved) toast(A.mode === 'box' ? 'Drag a box over the part to trace' : 'Draw a loop round the part to trace'); return; }
     const b = CN.pbox(poly); if ((b.x1 - b.x0) * view.s < 16 || (b.y1 - b.y0) * view.s < 16) { draw(); toast('That area is too small - draw a bigger loop'); return; }
     A.poly = poly.map(q => q.slice()); A.prev = null; run(); }
   // ---------- tracing the area (in the tracing helper, like the whole picture) ----------
@@ -37,14 +41,15 @@ window.TA = (() => {
   // ---------- screen ----------
   function paint(px) { if (tool !== 'tarea') return; const poly = A.drag || A.poly; ctx.save();
     if (A.prev && A.put === 'replace') { ctx.strokeStyle = 'rgba(250,82,82,0.55)'; ctx.lineWidth = 2 * px; ctx.setLineDash([4 * px, 3 * px]); ctx.beginPath(); for (const q of A.red || []) tracePath(q); ctx.stroke(); ctx.setLineDash([]); }
-    if (poly && poly.length > 1) { ctx.beginPath(); poly.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.fillStyle = 'rgba(232,89,12,0.08)'; ctx.fill(); ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2 * px; ctx.setLineDash([8 * px, 5 * px]); ctx.stroke(); ctx.setLineDash([]); }
-    if (A.prev) { ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2.2 * px; ctx.lineCap = ctx.lineJoin = 'round'; ctx.beginPath(); for (const p of A.prev) tracePath(p); ctx.stroke(); }
+    if (A.poly && !A.drag) { ctx.restore(); CN.areaPaint(A.poly, px, '#e8590c', A.busy ? 'tracing…' : A.prev ? `${A.prev.length} lines` : ''); ctx.save(); }
+    else if (poly && poly.length > 1) { ctx.beginPath(); poly.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.fillStyle = 'rgba(232,89,12,0.08)'; ctx.fill(); ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2 * px; ctx.setLineDash([8 * px, 5 * px]); ctx.stroke(); ctx.setLineDash([]); }
+    if (A.prev) { ctx.strokeStyle = '#d9480f'; ctx.lineWidth = 2.2 * px; ctx.lineCap = ctx.lineJoin = 'round'; ctx.beginPath(); for (const p of A.prev) tracePath(p); ctx.stroke(); }
     ctx.restore(); }
   function panel() { if (!$('taBox')) return; document.querySelectorAll('[data-tamode]').forEach(b => b.classList.toggle('on', b.dataset.tamode === A.mode)); document.querySelectorAll('[data-taput]').forEach(b => b.classList.toggle('on', b.dataset.taput === A.put));
     [['taDetail', 'detail'], ['taSmooth', 'smooth'], ['taMin', 'minLen']].forEach(([id, k]) => { $(id).value = A.o[k]; $(id + 'Out').textContent = A.o[k]; });
     $('taApply').disabled = !A.prev || A.busy || !A.prev.length; $('taAgain').disabled = !A.poly;
     $('taHint').innerHTML = !A.poly ? `<b>Trace an area:</b> ${A.mode === 'box' ? 'drag a box over' : 'draw a loop round'} one part of the photo with one finger (a face, the eyes…). It is traced again in more detail. Two fingers move or zoom.`
-      : A.busy ? '<b>Tracing the area…</b>' : `<b>Preview</b> (orange): ${A.info}. ${A.put === 'replace' ? 'The red dashed lines inside the loop will be replaced.' : 'They will be added to the lines already there.'} More lines: raise <b>Detail</b> or lower <b>Ignore small bits</b>. Then tap <b>✓ Use these lines</b>.`; }
+      : A.busy ? '<b>Tracing the area…</b>' : `<b>Preview</b> (orange): ${A.info}. ${A.put === 'replace' ? 'The red dashed lines inside the loop will be replaced.' : 'They will be added to the lines already there.'} Drag the <b>squares</b> to resize the area, drag <b>inside</b> to move it. More lines: raise <b>Detail</b> or lower <b>Ignore small bits</b>. Then tap <b>✓ Use these lines</b>.`; }
   function wire() { if (!$('taBox')) return; const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
     on('taOpen', open); on('taApply', apply); on('taAgain', () => { A.poly = null; A.prev = null; A.seq++; A.busy = false; panel(); draw(); }); on('taDone', () => setTool('move'));
     on('taReset', () => { A.o = DEF(); localStorage.removeItem(KEY); panel(); soon(); toast('Area settings back to their defaults'); });
