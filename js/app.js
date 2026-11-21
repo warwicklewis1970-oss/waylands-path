@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.6';
+const APP_VERSION = 'v5.7';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -73,10 +73,12 @@ function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.widt
   if (S.src && S.src.w) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S.src.w, S.src.h); if (srcEl && S.showPhoto) { ctx.globalAlpha = Math.max(0.05, Math.min(0.8, (S.photoOp == null ? 25 : S.photoOp) / 100)); ctx.drawImage(srcEl, 0, 0, S.src.w, S.src.h); ctx.globalAlpha = 1; }
     ctx.strokeStyle = '#d8d0c2'; ctx.lineWidth = px; ctx.strokeRect(0, 0, S.src.w, S.src.h); }
   ctx.lineCap = ctx.lineJoin = 'round';
-  // grey edge = the cut line (dashed when cutting is switched off)
-  ctx.strokeStyle = S.cutOn ? 'rgba(120,120,120,0.9)' : 'rgba(150,150,150,0.6)'; ctx.lineWidth = 3.2 * px; ctx.setLineDash(S.cutOn ? [] : [8 * px, 6 * px]);
-  ctx.beginPath(); S.paths.forEach(p => { if (p.cut) tracePath(p); }); ctx.stroke(); ctx.setLineDash([]);
-  { const cz = S.paths.filter(p => p.cut && p.z); if (cz.length && S.cutOn) { ctx.save(); ctx.fillStyle = 'rgba(110,110,110,0.30)'; ctx.beginPath(); const bb = BZ.bbox(S.paths), m = Math.max(bb.w, bb.h) * 4; ctx.rect(bb.x0 - m, bb.y0 - m, bb.w + 2 * m, bb.h + 2 * m); cz.forEach(tracePath); ctx.fill('evenodd'); ctx.restore(); } }
+  // red edge = the cut line (dashed when cutting is switched off). Colour is on screen only - G-code and export SVG stay the same.
+  { const czAll = S.paths.filter(q => q.cut);
+    if (czAll.length) { ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = S.cutOn ? 'rgba(224,49,49,0.32)' : 'rgba(224,49,49,0.18)'; ctx.lineWidth = 6.4 * px; ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke();
+      ctx.strokeStyle = S.cutOn ? '#e03131' : 'rgba(224,49,49,0.55)'; ctx.lineWidth = 2.3 * px; ctx.setLineDash(S.cutOn ? [] : [8 * px, 6 * px]); ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }
+    const cz = czAll.filter(q => q.z); if (cz.length && S.cutOn) { ctx.save(); ctx.fillStyle = 'rgba(224,49,49,0.10)'; ctx.beginPath(); const bb = BZ.bbox(S.paths), m = Math.max(bb.w, bb.h) * 4; ctx.rect(bb.x0 - m, bb.y0 - m, bb.w + 2 * m, bb.h + 2 * m); cz.forEach(tracePath); ctx.fill('evenodd'); ctx.restore(); } }
+  { const lg = $('cutLegend'); if (lg) lg.hidden = !S.paths.length; }
   ctx.strokeStyle = '#151515'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); S.paths.forEach(p => { if (!p.cut && (!window.T4 || T4.plain(p))) tracePath(p); }); ctx.stroke(); if (window.T4) T4.paintThick(px);
   // highlighted paths (active in Nodes, first pick in Skip)
   const hi = new Set(act); if (tool === 'skip' && skip.first >= 0) hi.add(skip.first); if (pen && S.paths[pen.pi]) hi.add(pen.pi);
@@ -101,7 +103,7 @@ function paintNodes(px, hi) { const r = 4.5 * px;
   for (const pi of hi) { const p = S.paths[pi]; if (!p) continue; p.n.forEach((nd, j) => { const s = isSel(pi, j); ctx.fillStyle = s ? '#e8590c' : '#fff'; ctx.strokeStyle = s ? '#a33b00' : '#1d3557'; ctx.lineWidth = 1.3 * px; ctx.beginPath();
       if (nd.s) ctx.arc(nd.x, nd.y, r, 0, 7); else { ctx.rect(nd.x - r * 0.9, nd.y - r * 0.9, r * 1.8, r * 1.8); } ctx.fill(); ctx.stroke(); }); } }
 function updStats() { const e = etch(), c = cuts(), b = bbAll(), k = kmm();
-  $('stats').textContent = S.paths.length ? `${e.length} lines · ${BZ.countNodes(e)} points${c.length ? ` · cut ${BZ.countNodes(c)} points` : ''} · ${b ? `${f1(S.widthMm)} × ${f1(b.h * k)} mm` : ''}` : '';
+  $('stats').textContent = S.paths.length ? `${e.length} etch · ${c.length} cut · ${BZ.countNodes(e)} etch pts${c.length ? ` · ${BZ.countNodes(c)} cut pts` : ''} · ${b ? `${f1(S.widthMm)} × ${f1(b.h * k)} mm` : ''}` : '';
   $('empty').hidden = !!(S.src || S.paths.length); $('heightOut').textContent = b ? f1(b.h * k) + ' mm' : '–';
   $('tidyCount').textContent = S.paths.length ? `${e.length} lines, ${BZ.countNodes(e)} points.` : 'Nothing yet.'; }
 // ---------- cut line ----------
@@ -110,7 +112,7 @@ function cutStats() { const c = cuts(); let holes = 0; const open = c.filter(p =
   return { n: c.length, holes, open }; }
 function cutInfo() { const el = $('cutInfo'); if (!el) return; const c = cuts(), st = cutStats();
   el.innerHTML = !c.length ? '<span class="warn">No cut line yet. Tap <b>Make outer cut line</b> below to put one around the lines, or use the <b>Cut out</b> tool on any closed area.</span>' :
-    `${c.length > 1 ? `${c.length} cut lines${st.holes ? ` (${st.holes} inside the outline - cut first)` : ''}. ` : 'The grey line is the cut. '}${S.cutOn ? 'Cuts burn as their own step after the engraving: holes and windows first, the outside last.' : 'Cutting is switched off - only the engraving is exported.'}${st.open ? ` <span class="warn">${st.open} cut line${st.open > 1 ? 's are' : ' is'} open (the ends don't meet), so ${st.open > 1 ? 'they' : 'it'} won't free a piece.</span>` : ''} Drag cut lines and their points with the <b>Cut out</b> tool.`; lzUI(); }
+    `${c.length > 1 ? `${c.length} cut lines${st.holes ? ` (${st.holes} inside the outline - cut first)` : ''}. ` : 'The red line is the cut. '}${S.cutOn ? 'Cuts burn as their own step after the engraving: holes and windows first, the outside last.' : 'Cutting is switched off - only the engraving is exported.'}${st.open ? ` <span class="warn">${st.open} cut line${st.open > 1 ? 's are' : ' is'} open (the ends don't meet), so ${st.open > 1 ? 'they' : 'it'} won't free a piece.</span>` : ''} Drag cut lines and their points with the <b>Cut out</b> tool.`; lzUI(); }
 // cut lines the user made inside the outline (windows, slots): kept when a new outside cut line is made
 const holeCount = () => innerCuts().filter(p => p.z).length;
 function innerCuts() { const c = cuts(); if (!c.length) return []; const ab = BZ.bbox(etch().concat(c)), A = ab ? ab.w * ab.h : 0, polys = c.map(p => BZ.flatten(p, 0.5));
@@ -127,7 +129,7 @@ function makeCut(auto) { if (!auto) S.noAutoCut = 0; const e = etch(); if (!e.le
   for (const p of all) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
   g.stroke(); const id = g.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = id[i * 4] < 160 ? 1 : 0;
   const loops = T.outerCut(m, w, h, offU * s, brU * s).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy]));
-  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? (S.trace && S.trace.kind === 'photo' ? 'A grey cut line was made round the drawing. Don\'t want it cut out? Untick it in Size & cut.' : 'No outside edge was found in the picture, so a grey cut line was made round the design.') : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
+  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? (S.trace && S.trace.kind === 'photo' ? 'A red cut line was made round the drawing. Don\'t want it cut out? Untick it in Size & cut.' : 'No outside edge was found in the picture, so a red cut line was made round the design.') : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
 // ---------- tracing ----------
 // The tracer normally runs in a helper (js/worker.js) so the screen stays smooth. If the helper can't load, says nothing within a few
 // seconds, errors, or takes far too long, tracing carries on here on the main screen instead - never "Tracing..." forever.
@@ -153,7 +155,7 @@ async function retrace(record = true) { if (!srcImg) return; const seq = ++trace
   if (keepUC.length) { for (const k of keepUC) { const kb = BZ.bbox([k]), m = S.paths.findIndex(q => !q.cut && q.z && (b => Math.abs(b.x0 - kb.x0) + Math.abs(b.y0 - kb.y0) + Math.abs(b.x1 - kb.x1) + Math.abs(b.y1 - kb.y1) < 4)(BZ.bbox([q]))); if (m >= 0) S.paths.splice(m, 1); S.paths.push(k); } toast(`Traced again - your ${keepUC.length} cut out${keepUC.length > 1 ? 's were' : ' was'} kept`, 3500); }
   const nc = r.paths.filter(p => p.cut).length;
   if (r.mode === 'photo') $('traceInfo').innerHTML = `Photo: ${r.paths.length} lines, ${r.nodes} points. Fewer lines: lower <b>Detail</b> or raise <b>Ignore small bits</b>. Wobbly: raise <b>Smoothness</b>. Then tidy up with Eraser, Clear space and Draw over the faint photo. No cut line is added for a photo - for a cut-out shape use <b>⬡ Add shape</b> (or Make cut in Size &amp; cut).`; else
-  $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide. ${r.darkBg ? 'Auto: light shapes on a dark background (if that is wrong, tap <b>Dark lines on light paper</b>).' : r.mode === 'light' ? 'Light lines on dark.' : r.mode === 'normal' ? 'Dark lines on light paper.' : 'Auto: dark lines on light paper.'} ${nc ? 'Grey cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.solids ? ` ${r.solids} solid dark shape${r.solids > 1 ? 's' : ''} (windows, hinges…) traced round the edge.` : ''}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
+  $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide. ${r.darkBg ? 'Auto: light shapes on a dark background (if that is wrong, tap <b>Dark lines on light paper</b>).' : r.mode === 'light' ? 'Light lines on dark.' : r.mode === 'normal' ? 'Dark lines on light paper.' : 'Auto: dark lines on light paper.'} ${nc ? 'Red cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.solids ? ` ${r.solids} solid dark shape${r.solids > 1 ? 's' : ''} (windows, hinges…) traced round the edge.` : ''}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
   // photos: no automatic cut line (on a busy photo it would cut many small holes) - add a shape or Make cut by choice
   photoBgUI(); changed(); if (!S.noAutoCut && S.trace.kind !== 'photo' && !hasOuterCut() && etch().length) makeCut(true); }
 function traceSoon() { clearTimeout(traceT); traceT = setTimeout(() => retrace(true), 160); }
@@ -324,15 +326,20 @@ function straighten() { const segs = segsForAction(); if (!segs.length) { toast(
     const lvl = Math.abs(dy) < Math.abs(dx) * 0.14, up = Math.abs(dx) < Math.abs(dy) * 0.14; if (!lvl && !up) continue;
     const j2 = (k + 1) % p.n.length, grp = [s.b].concat(linked(pi, j2)); const mv = lvl ? [0, s.a.y - s.b.y] : [s.a.x - s.b.x, 0]; for (const m of grp) BZ.moveNode(m, mv[0], mv[1]); }
   changed({ keepSel: true }); toast('Straightened'); }
-// any line(s) -> cut (grey, own laser step) or back to etch
+// any line(s) -> cut (red, own laser step) or back to etch
 function pickedLines() { const s = new Set(act); for (const k of sel) s.add(+k.split(':')[0]); return [...s].filter(pi => S.paths[pi]); }
-function toggleCut() { const pis = pickedLines(); if (!pis.length) { toast('Tap a line first (or drag a box round several), then Make cut'); return; }
-  const toCut = pis.some(pi => !S.paths[pi].cut); const wasOuter = !toCut && pis.some(pi => { const p = S.paths[pi]; return p && p.cut && !p.hole; }); pushUndo(); for (const pi of pis) { if (toCut) { S.paths[pi].cut = true; S.paths[pi].uc = 1; } else { delete S.paths[pi].cut; delete S.paths[pi].uc; delete S.paths[pi].tabs; delete S.paths[pi].tabBase; delete S.paths[pi]._tsig; } } if (wasOuter) noteCutGone();
-  const open = toCut ? pis.filter(pi => !S.paths[pi].z).length : 0; if (toCut && !S.cutOn) { S.cutOn = true; syncInputs(); }
-  changed({ keepSel: true }); updCutBtn();
-  toast(toCut ? `${pis.length} line${pis.length > 1 ? 's' : ''} now cut${pis.length > 1 ? '' : 's'} (grey, in the cut file)${open ? ` - ${open} open line${open > 1 ? 's' : ''}: the ends don't meet, so it won't free a piece` : ''}` : `${pis.length} line${pis.length > 1 ? 's' : ''} back to etch`, open ? 5000 : 2600); }
-function updCutBtn() { const b = $('nCut'); if (!b) return; const pis = pickedLines(), allCut = pis.length && pis.every(pi => S.paths[pi].cut);
-  $('nCutL').textContent = allCut ? 'Make etch' : 'Make cut'; b.classList.toggle('iscut', !!allCut); b.classList.toggle('dim', !pis.length); }
+function setPathsKind(pis, toCut) { if (!pis.length) { toast('Tap a line first, then tap CUT'); return; }
+  if (window.T4 && T4.applySelKind) { T4.SL.list = pis.slice(); T4.applySelKind(!!toCut); if (tool !== 'sel') { T4.SL.list = []; T4.SL.merged = null; T4.SL.pendingCut = null; } updKindSegs(); return; }
+  const wasOuter = !toCut && pis.some(pi => { const p = S.paths[pi]; return p && p.cut && !p.hole && p.uc !== 1; }); pushUndo();
+  for (const pi of pis) { const p = S.paths[pi]; if (!p) continue; if (toCut) { p.cut = true; p.uc = 1; delete p.w; delete p.dbl; } else { delete p.cut; delete p.uc; delete p.tabs; delete p.tabBase; delete p._tsig; if (p.slot) delete p.slot; } }
+  if (toCut) { S.cutOn = true; if (typeof syncInputs === 'function') syncInputs(); } if (wasOuter) noteCutGone(); changed({ keepSel: true }); updKindSegs();
+  toast(toCut ? 'Now a cut line (red)' : 'Now an etch line again', 2800); }
+function toggleCut() { const pis = pickedLines(); if (!pis.length) { toast('Tap a line first (or drag a box round several), then tap CUT'); return; }
+  setPathsKind(pis, pis.some(pi => !S.paths[pi].cut)); }
+function updKindSegs() { const pis = pickedLines(), allCut = pis.length && pis.every(pi => S.paths[pi] && S.paths[pi].cut);
+  const nk = $('nKind'); if (nk) { if (!pis.length) nk.setAttribute('data-dim', '1'); else nk.removeAttribute('data-dim'); nk.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.kind === 'cut') === !!allCut)); } }
+function updCutBtn() { updKindSegs(); const b = $('nCut'); if (!b) return; const pis = pickedLines(), allCut = pis.length && pis.every(pi => S.paths[pi].cut);
+  const lab = $('nCutL'); if (lab) lab.textContent = allCut ? 'Make etch' : 'Make cut'; b.classList.toggle('iscut', !!allCut); b.classList.toggle('dim', !pis.length); }
 function selectLine() { const pis = act.size ? [...act] : [...selByPath().keys()]; if (!pis.length) { toast('Tap a line first'); return; } for (const pi of pis) S.paths[pi].n.forEach((_, j) => sel.add(pkey(pi, j))); updSel(); draw(); }
 function updSel() { const n = sel.size; $('selInfo').textContent = n ? `${n} point${n > 1 ? 's' : ''} picked` : act.size ? 'Line picked - tap a point, or drag a box round several' : 'Tap a line to show its points';
   document.querySelectorAll('[data-needsel]').forEach(b => { b.classList.toggle('dim', !n && !lastTap); }); updCutBtn(); }
@@ -395,7 +402,8 @@ document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
 $('delWhole').onclick = () => { delMode = 'whole'; $('delWhole').classList.add('on'); $('delStretch').classList.remove('on'); $('delTip').textContent = 'Tap a line: the whole line is removed.'; };
 const ACT = { nCorner: () => nodeType(false), nSmooth: () => nodeType(true), nLine: () => segType(true), nCurve: () => segType(false), nAdd: addNode, nDel: delNodes, nBreak: () => { if (!sel.size && act.size === 1) { const pi = [...act][0]; setTool('line'); T2.startBreak(pi); return; } breakNodes(); }, nJoin: joinNodes, nSeg: delSegs, nStraight: straighten, nAll: selectLine, nCut: toggleCut };
-for (const id in ACT) $(id).onclick = ACT[id];
+for (const id in ACT) { const el = $(id); if (el) el.onclick = ACT[id]; }
+document.querySelectorAll('#nKind button').forEach(b => b.onclick = () => setPathsKind(pickedLines(), b.dataset.kind === 'cut'));
 document.querySelectorAll('[data-nudge]').forEach(b => b.onclick = () => { const [x, y] = b.dataset.nudge.split(',').map(Number), st = +$('nudgeMm').value || 0.5; nudge(x * st, y * st); });
 // ---------- gestures (one finger edits; two fingers always move/zoom) ----------
 const ptrs = new Map(); let gest = null, pinch = null, lastTapT = 0, lastTapU = null;
@@ -529,7 +537,7 @@ function sheetPreview() { const sh = S.sheet, info = $('shInfo'), c = $('shPrev'
   g.fillStyle = '#e9dcc4'; g.fillRect(X(0), Y(lay.H), lay.W * s, lay.H * s); g.strokeStyle = '#8a7a60'; g.lineWidth = 2; g.strokeRect(X(0), Y(lay.H), lay.W * s, lay.H * s);
   g.setLineDash([6, 5]); g.strokeStyle = 'rgba(80,80,80,.7)'; g.lineWidth = 1; const m = +sh.margin || 0; g.strokeRect(X(m), Y(lay.H - m), (lay.W - 2 * m) * s, (lay.H - 2 * m) * s); g.setLineDash([]);
   const draw1 = (paths, col, lwid) => { g.strokeStyle = col; g.lineWidth = lwid; g.beginPath(); for (const o of lay.offs) for (const p of paths) { const f = BZ.flatten(p, 1 / (fr.k * s)); f.forEach(([x, y], i) => { const lx = o[0] + (x - fr.x0) * fr.k, ly = o[1] + (fr.y1 - y) * fr.k; i ? g.lineTo(X(lx), Y(ly)) : g.moveTo(X(lx), Y(ly)); }); } g.stroke(); };
-  draw1(etch(), '#222', 1); if (cutActive()) draw1(cuts(), '#d9480f', 1.4);
+  draw1(etch(), '#151515', 1); if (cutActive()) draw1(cuts(), '#e03131', 1.4);
   g.fillStyle = '#e03131'; g.beginPath(); g.arc(X(0), Y(0), 6, 0, 7); g.fill(); g.font = 'bold 15px system-ui, sans-serif'; g.fillStyle = '#ffd8a8'; g.fillText('0,0', X(0) + 4, Y(0) + 22);
   g.fillStyle = '#c9d6dc'; g.font = '13px system-ui, sans-serif'; g.fillText(`${Math.round(lay.W * 10) / 10} mm`, X(lay.W / 2) - 24, Y(lay.H) - 8);
   if (!lay.fits) { g.strokeStyle = '#e03131'; g.lineWidth = 3; g.strokeRect(X(lay.ax0), Y(lay.ay1), lay.bw * s, lay.bh * s); }
@@ -595,8 +603,8 @@ $('homeBtn').onclick = showHome;
 $('newBtn').onclick = async () => { await saveNow(); $('panelFile').click(); };
 // ---------- help ----------
 const HELP = [
-  ['🖼️', 'Open a line drawing', 'Open a PNG/JPG line drawing or an SVG. Black lines are what the laser etches; the <b>grey line</b> round the outside is where it cuts the piece out. Pick a tool at the bottom. <b>Two fingers</b> always move and zoom the picture; <b>⤢ Fit</b> re-centres it.'],
-  ['✏️', 'The 8 tools (tap one, tap again to put it away)', '<b>Select</b>: tap a line - the whole line turns blue - then <b>Delete line</b>, <b>Break</b> (tap where it stops and starts again), <b>Thickness</b> or <b>Make cut</b>.<br><b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area, tap Cut out - it becomes a hole, shaded grey. Add as many as you like. Tap a grey hole and <i>Make etch line</i> to undo one.<br><b>Clear space</b>: tap inside an area (e.g. a window pane) - it turns red. Tap more areas to add them, or drag a box. Tick <i>Include border lines</i> to remove the frame too. Then tap Clear.'],
+  ['🖼️', 'Open a line drawing', 'Open a PNG/JPG line drawing or an SVG. Black lines are what the laser etches; the <b>red line</b> round the outside is where it cuts the piece out. Pick a tool at the bottom. <b>Two fingers</b> always move and zoom the picture; <b>⤢ Fit</b> re-centres it.'],
+  ['✏️', 'The 8 tools (tap one, tap again to put it away)', '<b>Select</b>: tap a line - the whole line turns blue - then <b>Delete line</b>, <b>Break</b> (tap where it stops and starts again), <b>Thickness</b> or the <b>ETCH | CUT</b> switch (CUT turns the whole connected shape into one cut line).<br><b>Point to point</b>: tap, tap, tap for straight lines; drag a line to bend it.<br><b>Draw</b>: draw a line with your finger.<br><b>Break</b>: tap two points - removes the bit between, or adds a line across a gap.<br><b>Eraser</b>: rub lines out, or tap one to remove it.<br><b>Thickness</b>: tap a line, slide to thicken, or make it a double line.<br><b>Cut out</b>: tap inside an area (or lasso it) - the whole outline turns red so you can check it, then tap <i>✓ Make this a cut</i>. If there is a small gap, the app offers to close it. Tap a red cut and <i>Make etch line</i> to undo one.<br><b>Clear space</b>: tap inside an area (e.g. a window pane) - it turns red. Tap more areas to add them, or drag a box. Tick <i>Include border lines</i> to remove the frame too. Then tap Clear.'],
   ['☰', 'Menu and Export', '<b>☰ Menu</b> holds the picture, trace, size, laser, sheet and <b>Add shape</b>. <b>Export</b> (top bar) makes the LaserGRBL files. <b>↶ Undo</b> undoes anything.'],
 ];
 let helpI = 0;
@@ -611,7 +619,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: sharper line-art tracing, tabs and slots with kerf, and add another picture'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: red cut lines, whole-shape cuts, and crush bumps every 5 mm'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -648,7 +656,7 @@ async function openFromForge(rec) { if (!rec || !rec.svg) return false; await sa
   if (r.mmW > 0) S.widthMm = Math.round(r.mmW * 100) / 100; const nc = r.paths.filter(p => p.cut).length; S.cutOn = nc > 0; await FF.clear();
   $('srcInfo').innerHTML = `From Wayland Forge: ${r.paths.length - nc} etch lines${nc ? ` and ${nc} cut line${nc > 1 ? 's' : ''}` : ''}, ${f1(S.widthMm)} mm wide, curves kept.${rec.photos ? ` <span class="warn">${rec.photos} photo${rec.photos > 1 ? 's' : ''} stayed in Forge.</span>` : ''}`;
   syncInputs(); enterApp(); closeMenu(); changed(); fit(); await saveNow();
-  $('ffNote').innerHTML = `<b>${esc(S.name)}</b> came from Wayland Forge as a new project, ${f1(S.widthMm)} × ${f1(r.mmH)} mm.<br><br>Letters arrive as <b>outlines</b> - a line round each letter - not single lines. Edit them with the tools as usual.${nc ? '<br><br>Forge\'s cut lines are shaded grey and stay cuts.' : ''}${rec.photos ? `<br><br>${rec.photos} photo${rec.photos > 1 ? 's' : ''} stayed in Forge - Waylands Path works with lines.` : ''}<br><br>Laser 0,0 is the bottom-left corner of the design. Your Forge design is unchanged.`;
+  $('ffNote').innerHTML = `<b>${esc(S.name)}</b> came from Wayland Forge as a new project, ${f1(S.widthMm)} × ${f1(r.mmH)} mm.<br><br>Letters arrive as <b>outlines</b> - a line round each letter - not single lines. Edit them with the tools as usual.${nc ? '<br><br>Forge\'s cut lines show in red and stay cuts.' : ''}${rec.photos ? `<br><br>${rec.photos} photo${rec.photos > 1 ? 's' : ''} stayed in Forge - Waylands Path works with lines.` : ''}<br><br>Laser 0,0 is the bottom-left corner of the design. Your Forge design is unchanged.`;
   const d = $('ffDlg'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); return true; }
 $('ffOk').onclick = () => $('ffDlg').close();
 async function checkForge() { const rec = await FF.get(); const bar = $('ffWait'); if (!rec || !rec.svg) { if (bar) bar.hidden = true; return; }

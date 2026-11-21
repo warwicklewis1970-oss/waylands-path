@@ -191,3 +191,14 @@ body.home #home{place-items:start center;overflow-y:auto}
 /* v5.2 faint photo toggle on the drawing */
 .bgbtn{position:absolute;right:8px;bottom:8px;min-height:40px;padding:4px 12px;border-radius:20px;background:rgba(22,35,43,.85);color:#fff;font-size:14px;z-index:3}.bgbtn.on{background:var(--acc);color:#082522;font-weight:600}
 #tkind{margin-bottom:8px}#cnMode{margin-bottom:6px}#cnMode button{font-size:15px;min-height:46px}#taMode,#taPut{margin:4px 0}#taMode button,#taPut button{font-size:14px;min-height:44px}#taCtl[hidden]{display:none}.cnareaacts{display:grid;grid-template-columns:2fr 1fr 1fr;gap:5px}.cnareaacts[hidden],.cnacts[hidden]{display:none}.cnareaacts button{min-height:54px;font-size:15px;line-height:1.15;padding:2px 4px}#cnAreaGo{font-size:17px;font-weight:700}.cnflip button{flex:1 1 0;min-height:46px;font-size:14px}.cnsel{display:flex;gap:8px;align-items:center;margin-bottom:6px}.cnsel button{min-height:44px;font-size:14px;padding:2px 12px;flex:0 0 auto}.cnsel .chk{font-size:14px;min-height:44px;display:flex;align-items:center;gap:6px}.cnsel[hidden]{display:none}#cnMode button{padding:4px 6px}#cnAll{border-left:1px solid var(--line)}#tkind button{font-size:15px;min-height:48px}
+
+.cutleg{position:absolute;left:8px;bottom:8px;background:rgba(22,35,43,.9);color:#fff;padding:5px 10px;border-radius:12px;font-size:12px;line-height:1.35;pointer-events:none;z-index:3;max-width:70%}
+.cutleg b.cut{color:#ff6b6b}
+.cutleg b.etch{color:#fff}
+.kindseg{display:flex;width:100%;margin:6px 0 10px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.kindseg button{flex:1;border:0;border-radius:0;min-height:48px;padding:6px 8px;font-size:16px;font-weight:800;letter-spacing:.04em;background:transparent;color:inherit}
+.kindseg button[data-kind="etch"].on{background:#1b1b1b;color:#fff}
+.kindseg button[data-kind="cut"].on{background:#e03131;color:#fff}
+.kindseg button.mix{opacity:.95}
+.kindseg[data-dim="1"]{opacity:.45;pointer-events:none}
+label.chk.tbfull, .hint.tbfull{grid-column:1/-1}

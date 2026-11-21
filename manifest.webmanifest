@@ -1,7 +1,7 @@
 {
   "name": "Waylands Path",
   "short_name": "Path",
-  "description": "Turn line drawings and SVGs into clean laser lines with a grey cut edge, tidy them with simple node tools, and export LaserGRBL files.",
+  "description": "Turn line drawings and SVGs into clean laser lines with a red cut edge, tidy them with simple node tools, and export LaserGRBL files.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

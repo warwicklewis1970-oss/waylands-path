@@ -7,18 +7,18 @@
 'use strict';
 window.TB = (() => {
   const $ = id => document.getElementById(id), KEY = 'wp-tabs';
-  const STD = { w: 10, proj: 4, n: 2, gap: 35, bump: true, bh: 0.15, bw: 0.8, body: 100, thick: 4, kerf: 0.1, slotW: 10, slotH: 3.9, edge: 'bottom' };
-  const LIM = { w: [1, 200], proj: [0.5, 50], n: [1, 10], gap: [0, 500], bh: [0, 2], bw: [0.1, 10], body: [5, 2000], thick: [0.5, 50], kerf: [0, 1], slotW: [0.5, 200], slotH: [0.5, 50] };
+  const STD = { w: 10, proj: 4, n: 2, gap: 35, bump: true, slotBump: true, bsp: 5, bh: 0.15, bw: 0.8, body: 100, thick: 4, kerf: 0.1, slotW: 10, slotH: 3.9, edge: 'bottom' };
+  const LIM = { w: [1, 200], proj: [0.5, 50], n: [1, 10], gap: [0, 500], bsp: [1, 50], bh: [0, 2], bw: [0.1, 10], body: [5, 2000], thick: [0.5, 50], kerf: [0, 1], slotW: [0.5, 200], slotH: [0.5, 50] };
   const T = { on: false, pick: -1, slotPick: -1, mode: 'tabs', v: load(), bad: [] };
   function load() { let o = {}; try { o = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { o = {}; } const v = Object.assign({}, STD);
     for (const k of Object.keys(STD)) {
-      if (k === 'bump') { if (typeof o.bump === 'boolean') v.bump = o.bump; }
+      if (k === 'bump' || k === 'slotBump') { if (typeof o[k] === 'boolean') v[k] = o[k]; }
       else if (k === 'edge') { if (['bottom', 'top', 'left', 'right'].includes(o.edge)) v.edge = o.edge; }
       else if (+o[k] >= LIM[k][0] && +o[k] <= LIM[k][1]) v[k] = +o[k];
     } return v; }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(T.v)); } catch (e) { /* */ } };
   const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
-  const cfgOf = () => ({ w: T.v.w, proj: T.v.proj, n: T.v.n, gap: T.v.gap, bump: T.v.bump, bh: T.v.bh, bw: T.v.bw, kerf: T.v.kerf, edge: T.v.edge, thick: T.v.thick, slotW: T.v.slotW, slotH: T.v.slotH });
+  const cfgOf = () => ({ w: T.v.w, proj: T.v.proj, n: T.v.n, gap: T.v.gap, bump: T.v.bump, slotBump: T.v.slotBump !== false, bsp: T.v.bsp > 0 ? T.v.bsp : 5, bh: T.v.bh, bw: T.v.bw, kerf: T.v.kerf, edge: T.v.edge, thick: T.v.thick, slotW: T.v.slotW, slotH: T.v.slotH });
   function outer() { let best = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || p.slot || !p.z) continue; const b = BZ.bbox([{ n: p.tabBase || p.n, z: true }]); if (b && b.w * b.h > ba) { ba = b.w * b.h; best = p; } } return best; }
   const baseOf = p => ({ n: p.tabBase || p.n, z: true });
   const slots = () => S.paths.map((p, i) => [p, i]).filter(([p]) => p.slot);
@@ -39,6 +39,10 @@ window.TB = (() => {
 
   function bumpPts(xs, dir, yc, hw, bh, down) { const pts = [], s = bh, c = hw; if (!(s > 0 && c > 0)) return pts; const R = (c * c + s * s) / (2 * s), tm = Math.asin(Math.min(1, c / R)), N = 8;
     for (let i = 0; i <= N; i++) { const th = -tm + 2 * tm * i / N; pts.push([xs + dir * (R * Math.cos(th) - (R - s)), yc + R * Math.sin(th)]); } return down ? pts : pts.reverse(); }
+  function bumpCentres(len, spacing) { if (!(len > 0) || !(spacing > 0)) return []; if (len < spacing) return [len / 2]; const n = Math.max(1, Math.floor(len / spacing)), seg = len / n, out = []; for (let i = 0; i < n; i++) out.push((i + 0.5) * seg); return out; }
+  const isLegacyCfg = cfg => cfg && cfg.bsp == null && cfg.slotBump == null;
+  function bumpCap(cx, cy, tx, ty, nx, ny, hw, bh) { if (!(hw > 0 && bh > 0)) return []; const R = (hw * hw + bh * bh) / (2 * bh), tm = Math.asin(Math.min(1, hw / R)), N = 8, pts = [];
+    for (let i = 0; i <= N; i++) { const th = -tm + 2 * tm * i / N, along = R * Math.sin(th), out = R * Math.cos(th) - (R - bh); pts.push([cx + tx * along + nx * out, cy + ty * along + ny * out]); } return pts; }
   function cross(q, x, bb) { const cs = BZ.crossings(q, [x, bb.y0 - 10], [x, bb.y1 + 10], 0.05); let best = null; for (const c of cs) if (!best || c.pt[1] > best.pt[1]) best = c; return best; }
   function addNodeAt(q, c) { const nd = q.n; if (c.t < 1e-6) return c.k; if (c.t > 1 - 1e-6) return (c.k + 1) % nd.length; return BZ.insertNode(q, c.k, c.t); }
   const idxNear = (q, pt) => { let bi = 0, bd = Infinity; q.n.forEach((nd, i) => { const d = Math.hypot(nd.x - pt[0], nd.y - pt[1]); if (d < bd) { bd = d; bi = i; } }); return bi; };
@@ -55,18 +59,33 @@ window.TB = (() => {
       let top = 0; q.n.forEach((nd, i) => { if (nd.y < q.n[top].y) top = i; }); const fwd = (a, b) => { const out = []; for (let i = a; ; i = (i + 1) % m) { out.push(i); if (i === b) break; } return out; };
       const AB = fwd(iA, iB), rem = AB.includes(top) && top !== iA && top !== iB ? fwd(iB, iA) : AB, S0 = rem[0], E0 = rem[rem.length - 1], keep = fwd(E0, S0);
       const nS = q.n[S0], nE = q.n[E0], sx = Math.abs(nS.x - x0) < Math.abs(nS.x - x1) ? x0 : x1, ex = sx === x0 ? x1 : x0, dS = Math.sign(sx - cx), dE = Math.sign(ex - cx);
-      const yc = yb - cfg.proj / 2 / k, bhw = cfg.bw / 2 / k, bh = cfg.bump ? cfg.bh / k : 0, pts = [];
-      if (bh > 0 && yc - bhw > nS.y + 1e-9) pts.push(...bumpPts(sx, dS, yc, bhw, bh, true)); pts.push([sx, yb], [ex, yb]);
-      if (bh > 0 && yc - bhw > nE.y + 1e-9) pts.push(...bumpPts(ex, dE, yc, bhw, bh, false));
+      const bhw = cfg.bw / 2 / k, bh = cfg.bump ? cfg.bh / k : 0, pts = [], yBody = yb - cfg.proj / k;
+      const ys = (() => { if (!(bh > 0)) return []; if (isLegacyCfg(cfg)) return [yb - cfg.proj / 2 / k]; return bumpCentres(cfg.proj, cfg.bsp > 0 ? cfg.bsp : 5).map(d => yBody + d / k); })();
+      for (const yc of ys) if (yc - bhw > nS.y + 1e-9) pts.push(...bumpPts(sx, dS, yc, bhw, bh, true));
+      pts.push([sx, yb], [ex, yb]);
+      for (const yc of ys.slice().reverse()) if (yc - bhw > nE.y + 1e-9) pts.push(...bumpPts(ex, dE, yc, bhw, bh, false));
       const nn = keep.map(i => q.n[i]); nn[0] = Object.assign({}, nn[0], { i: null }); nn[nn.length - 1] = Object.assign({}, nn[nn.length - 1], { o: null, s: 0 }); nn[0].s = 0;
       for (const p of pts) nn.push(BZ.node(p[0], p[1])); q.n = nn; });
     return { n: xformNodes(q.n, xf.unmap), bad }; }
 
   function slotShape(p, k) { const s = p.slot, kerf = s.kerf > 0 ? +s.kerf : 0, W = Math.max(0.3, s.w - kerf) / k, H = Math.max(0.3, s.h - kerf) / k;
-    const hw = W / 2, hh = H / 2, rot = s.rot || 0; let pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
-    if (rot === 90 || rot === 270) pts = pts.map(([x, y]) => [-y, x]);
-    pts = pts.map(([x, y]) => [s.cx + x, s.cy + y]);
-    const q = BZ.fromPolyline(pts.concat([pts[0]]), { closed: true, tol: 0.15, corner: 20, smooth: 0 });
+    const hw = W / 2, hh = H / 2, rot = s.rot || 0;
+    const legacy = s.bsp == null && s.slotBump == null && s.bump == null;
+    const wantBumps = !legacy && s.slotBump !== false && s.bump !== false && ((s.bh != null ? s.bh : T.v.bh) > 0);
+    let local = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+    if (wantBumps) { const bh = (s.bh != null ? s.bh : T.v.bh) / k, bhw = (s.bw != null ? s.bw : T.v.bw) / 2 / k, sp = s.bsp > 0 ? s.bsp : (T.v.bsp > 0 ? T.v.bsp : 5);
+      const sides = [ { a: [-hw, -hh], b: [hw, -hh], len: s.w }, { a: [hw, -hh], b: [hw, hh], len: s.h }, { a: [hw, hh], b: [-hw, hh], len: s.w }, { a: [-hw, hh], b: [-hw, -hh], len: s.h } ];
+      const out = [];
+      for (const side of sides) { const dx = side.b[0] - side.a[0], dy = side.b[1] - side.a[1], plen = Math.hypot(dx, dy) || 1, tx = dx / plen, ty = dy / plen, nx = -ty, ny = tx;
+        const cs = bumpCentres(side.len, sp);
+        out.push(side.a);
+        for (const d of cs) { const t = (d / side.len) * plen; if (t - bhw <= 1e-9 || t + bhw >= plen - 1e-9) continue;
+          const cx = side.a[0] + tx * t, cy = side.a[1] + ty * t; out.push([cx - tx * bhw, cy - ty * bhw]); out.push(...bumpCap(cx, cy, tx, ty, nx, ny, bhw, bh)); out.push([cx + tx * bhw, cy + ty * bhw]); }
+        out.push(side.b); }
+      local = out; }
+    if (rot === 90 || rot === 270) local = local.map(([x, y]) => [-y, x]);
+    const pts = local.map(([x, y]) => [s.cx + x, s.cy + y]);
+    const q = BZ.fromPolyline(pts.concat([pts[0]]), { closed: true, tol: 0.12, corner: 18, smooth: 0 });
     p.n = q ? q.n : pts.map(a => BZ.node(a[0], a[1])); p.z = true; p.cut = true; p.uc = 1; delete p.w; delete p.dbl; }
 
   function sync() { T.bad = []; for (const p of S.paths) { if (p.slot) { slotShape(p, kmm()); continue; } if (!p.tabs && !p.tabBase) continue;
@@ -78,29 +97,31 @@ window.TB = (() => {
   function centreAlong(edge) { const E = outer(), ps = S.paths.map(p => p.tabBase ? baseOf(p) : p), b = BZ.bbox(ps); if (!b) return 0;
     if (edge === 'left' || edge === 'right') return (b.y0 + b.y1) / 2; return (b.x0 + b.x1) / 2; }
   function body() { const ps = S.paths.map(p => p.tabBase ? baseOf(p) : p), b = BZ.bbox(ps), k = kmm(); return b ? { w: b.w * k, h: b.h * k } : null; }
+  function stampSlots() { const bump = T.v.slotBump !== false, bsp = T.v.bsp > 0 ? T.v.bsp : 5; for (const [p] of slots()) { p.slot.slotBump = bump; p.slot.bump = bump; p.slot.bsp = bsp; p.slot.bh = T.v.bh; p.slot.bw = T.v.bw; p.slot.kerf = T.v.kerf; } }
   function standard() { const E = outer(); if (!E) { toast('Make the outer cut line first (Cut out tool › Outer cut), then add tabs.', 4500); return; }
-    pushUndo(); const c = cfgOf(); c.xs = layoutXs(c, kmm(), centreAlong(c.edge)); E.tabs = c; delete E._tsig; T.pick = -1; T.mode = 'tabs'; changed(); panel();
+    pushUndo(); const c = cfgOf(); c.xs = layoutXs(c, kmm(), centreAlong(c.edge)); E.tabs = c; delete E._tsig; stampSlots(); T.pick = -1; T.mode = 'tabs'; changed(); panel();
     const edge = c.edge || 'bottom'; toast(T.bad.length ? 'Some tabs did not fit on that edge - check the panel' : `${c.n} tab${c.n > 1 ? 's' : ''} added: ${c.w} × ${c.proj} mm, ${c.gap} mm apart, on the ${edge} edge`, 3500); }
-  function setVal(key, val) { const L = LIM[key]; if (key !== 'bump' && key !== 'edge') { if (!(val >= L[0] && val <= L[1])) { toast(`Use a number from ${L[0]} to ${L[1]}`); panel(); return; } val = key === 'n' ? Math.round(val) : r3(val); }
+  function setVal(key, val) { const L = LIM[key]; if (key !== 'bump' && key !== 'slotBump' && key !== 'edge') { if (!(val >= L[0] && val <= L[1])) { toast(`Use a number from ${L[0]} to ${L[1]}`); panel(); return; } val = key === 'n' ? Math.round(val) : r3(val); }
     if (key === 'edge' && !['bottom', 'top', 'left', 'right'].includes(val)) return;
     T.v[key] = val; save();
     if (key === 'thick' && Math.abs(T.v.slotH - (T.v.thick - 0.1)) < 0.15) { T.v.slotH = r3(Math.max(0.5, val - 0.1)); save(); }
     if (key === 'w' && Math.abs(T.v.slotW - T.v.w) < 0.05) { T.v.slotW = val; save(); }
     const E = outer();
-    if (key === 'slotW' || key === 'slotH' || key === 'kerf') {
-      const hs = slots(); if (hs.length) { pushUndo(); for (const [p] of hs) { if (key === 'slotW') p.slot.w = T.v.slotW; if (key === 'slotH') p.slot.h = T.v.slotH; if (key === 'kerf') p.slot.kerf = T.v.kerf; } }
+    if (key === 'slotW' || key === 'slotH' || key === 'kerf' || key === 'slotBump' || key === 'bsp' || key === 'bh' || key === 'bw') {
+      const hs = slots(); if (hs.length) { pushUndo(); for (const [p] of hs) { if (key === 'slotW') p.slot.w = T.v.slotW; if (key === 'slotH') p.slot.h = T.v.slotH; if (key === 'kerf') p.slot.kerf = T.v.kerf;
+        if (key === 'slotBump' || key === 'bsp' || key === 'bh' || key === 'bw') { p.slot.slotBump = T.v.slotBump !== false; p.slot.bump = T.v.slotBump !== false; p.slot.bsp = T.v.bsp > 0 ? T.v.bsp : 5; p.slot.bh = T.v.bh; p.slot.bw = T.v.bw; } } }
     }
-    if (key === 'body' || !E || !E.tabs) { if (key === 'kerf' || key === 'slotW' || key === 'slotH') changed(); panel(); return; }
-    pushUndo(); if (key in E.tabs || key === 'edge' || key === 'kerf') { E.tabs[key] = val; if (key === 'n' || key === 'gap' || key === 'w' || key === 'kerf' || key === 'edge') E.tabs.xs = layoutXs(E.tabs, kmm(), E.tabs.xs.length ? E.tabs.xs.reduce((a, b) => a + b, 0) / E.tabs.xs.length : centreAlong(E.tabs.edge || T.v.edge)); delete E._tsig; }
+    if (key === 'body' || !E || !E.tabs) { if (key === 'kerf' || key === 'slotW' || key === 'slotH' || key === 'slotBump' || key === 'bsp' || key === 'bh' || key === 'bw') changed(); panel(); return; }
+    pushUndo(); if (key in E.tabs || key === 'edge' || key === 'kerf' || key === 'slotBump' || key === 'bsp') { E.tabs[key] = val; if (key === 'n' || key === 'gap' || key === 'w' || key === 'kerf' || key === 'edge') E.tabs.xs = layoutXs(E.tabs, kmm(), E.tabs.xs.length ? E.tabs.xs.reduce((a, b) => a + b, 0) / E.tabs.xs.length : centreAlong(E.tabs.edge || T.v.edge)); delete E._tsig; }
     changed(); panel(); }
   function setEdge(edge) { T.v.edge = edge; save(); const E = outer(); if (E && E.tabs) { pushUndo(); E.tabs.edge = edge; E.tabs.xs = layoutXs(E.tabs, kmm(), centreAlong(edge)); delete E._tsig; changed(); } panel(); draw(); }
-  function reset() { T.v = Object.assign({}, STD); save(); const E = outer(); if (E && E.tabs) { pushUndo(); const c = cfgOf(); c.xs = layoutXs(c, kmm(), centreAlong(c.edge)); E.tabs = c; delete E._tsig; changed(); } panel(); toast('Reset to your standard: 10 × 4 mm tabs, 2 tabs, 35 mm gap, 0.15 × 0.8 mm bumps, 4 mm plywood, 10 × 3.9 mm slots, 0.1 mm kerf', 4000); }
+  function reset() { T.v = Object.assign({}, STD); save(); const E = outer(); if (E && E.tabs) { pushUndo(); const c = cfgOf(); c.xs = layoutXs(c, kmm(), centreAlong(c.edge)); E.tabs = c; delete E._tsig; stampSlots(); changed(); } panel(); toast('Reset to your standard: 10 × 4 mm tabs, 2 tabs, 35 mm gap, bumps every 5 mm (0.15 × 0.8 mm) on tabs and slots, 4 mm plywood, 10 × 3.9 mm slots, 0.1 mm kerf', 4000); }
   function removeTab() { const E = outer();
     if (T.slotPick >= 0 && S.paths[T.slotPick] && S.paths[T.slotPick].slot) { pushUndo(); S.paths.splice(T.slotPick, 1); T.slotPick = -1; changed(); panel(); toast('Slot removed - Undo brings it back'); return; }
     if (!E || !E.tabs) return; pushUndo(); if (T.pick >= 0) E.tabs.xs.splice(T.pick, 1); else E.tabs.xs = []; T.pick = -1; delete E._tsig; changed(); panel(); toast('Tab removed - Undo brings it back'); }
   function setBody() { const b = body(); if (!b || !b.h) return; pushUndo(); S.widthMm = S.widthMm * T.v.body / b.h; syncInputs(); changed(); panel(); toast(`Design resized: the body is now ${T.v.body} mm tall`); }
 
-  function addSlot(u) { const k = kmm(), p = { n: [], z: true, cut: true, uc: 1, slot: { cx: u[0], cy: u[1], w: T.v.slotW, h: T.v.slotH, rot: 0, kerf: T.v.kerf } }; slotShape(p, k);
+  function addSlot(u) { const k = kmm(), p = { n: [], z: true, cut: true, uc: 1, slot: { cx: u[0], cy: u[1], w: T.v.slotW, h: T.v.slotH, rot: 0, kerf: T.v.kerf, bump: T.v.slotBump !== false, slotBump: T.v.slotBump !== false, bsp: T.v.bsp > 0 ? T.v.bsp : 5, bh: T.v.bh, bw: T.v.bw } }; slotShape(p, k);
     pushUndo(); S.paths.push(p); S.cutOn = true; T.slotPick = S.paths.length - 1; T.pick = -1; T.mode = 'slot'; sync(); changed(); panel(); syncInputs();
     toast(`Slot added: ${T.v.slotW} × ${T.v.slotH} mm. Drag to move it, or tap Turn slot 90°.`, 3500); }
   function rotateSlot() { const p = T.slotPick >= 0 ? S.paths[T.slotPick] : slots().length ? slots()[slots().length - 1][0] : null;
@@ -140,9 +161,10 @@ window.TB = (() => {
   function panel() { const box = $('tbBox'); if (!box) return; const pnl = box.closest('[data-opts]'); if (pnl) pnl.classList.toggle('tbon', T.on); document.querySelectorAll('[data-tabs]').forEach(x => x.classList.toggle('on', T.on)); if (!T.on) return;
     document.querySelectorAll('[data-shape],[data-hole]').forEach(x => x.classList.remove('on'));
     const E = outer(), t = E && E.tabs ? E.tabs : null, v = T.v, edge = (t && t.edge) || v.edge || 'bottom';
-    for (const [id, key] of [['tbW', 'w'], ['tbP', 'proj'], ['tbN', 'n'], ['tbG', 'gap'], ['tbBh', 'bh'], ['tbBw', 'bw'], ['tbBody', 'body'], ['tbTh', 'thick'], ['tbKerf', 'kerf'], ['tbSW', 'slotW'], ['tbSH', 'slotH']]) {
-      if (!$(id) || document.activeElement === $(id)) continue; const fromTab = t && key in t && key !== 'body' && key !== 'thick' && key !== 'slotW' && key !== 'slotH'; $(id).value = fromTab ? t[key] : v[key]; }
+    for (const [id, key] of [['tbW', 'w'], ['tbP', 'proj'], ['tbN', 'n'], ['tbG', 'gap'], ['tbBh', 'bh'], ['tbBw', 'bw'], ['tbBsp', 'bsp'], ['tbBody', 'body'], ['tbTh', 'thick'], ['tbKerf', 'kerf'], ['tbSW', 'slotW'], ['tbSH', 'slotH']]) {
+      if (!$(id) || document.activeElement === $(id)) continue; const fromTab = t && key in t && key !== 'body' && key !== 'thick' && key !== 'slotW' && key !== 'slotH' && key !== 'bsp'; $(id).value = fromTab && t[key] != null ? t[key] : v[key]; }
     if ($('tbBump')) $('tbBump').checked = t ? !!t.bump : v.bump;
+    if ($('tbSlotBump')) $('tbSlotBump').checked = t && t.slotBump != null ? !!t.slotBump : v.slotBump !== false;
     document.querySelectorAll('[data-tbedge]').forEach(b => b.classList.toggle('on', b.dataset.tbedge === edge));
     if (T.pick >= 0 && !(t && T.pick < t.xs.length)) T.pick = -1;
     if (T.slotPick >= 0 && !(S.paths[T.slotPick] && S.paths[T.slotPick].slot)) T.slotPick = -1;
@@ -173,14 +195,15 @@ window.TB = (() => {
   function wire() { if (!$('tbBox')) return;
     document.querySelectorAll('[data-tabs]').forEach(b => b.onclick = () => setOn(true));
     document.querySelectorAll('[data-shape],[data-hole]').forEach(b => b.addEventListener('click', () => { if (T.on) { T.on = false; T.pick = -1; T.slotPick = -1; panel(); } if (b.dataset.hole && window.HH) HH.setOn(true); }));
-    for (const [id, key] of [['tbW', 'w'], ['tbP', 'proj'], ['tbN', 'n'], ['tbG', 'gap'], ['tbBh', 'bh'], ['tbBw', 'bw'], ['tbBody', 'body'], ['tbTh', 'thick'], ['tbKerf', 'kerf'], ['tbSW', 'slotW'], ['tbSH', 'slotH']]) {
+    for (const [id, key] of [['tbW', 'w'], ['tbP', 'proj'], ['tbN', 'n'], ['tbG', 'gap'], ['tbBh', 'bh'], ['tbBw', 'bw'], ['tbBsp', 'bsp'], ['tbBody', 'body'], ['tbTh', 'thick'], ['tbKerf', 'kerf'], ['tbSW', 'slotW'], ['tbSH', 'slotH']]) {
       if ($(id)) $(id).addEventListener('change', () => setVal(key, +$(id).value)); }
     if ($('tbBump')) $('tbBump').addEventListener('change', () => setVal('bump', $('tbBump').checked));
+    if ($('tbSlotBump')) $('tbSlotBump').addEventListener('change', () => setVal('slotBump', $('tbSlotBump').checked));
     document.querySelectorAll('[data-tbedge]').forEach(b => b.onclick = () => setEdge(b.dataset.tbedge));
     $('tbStd').onclick = standard; $('tbReset').onclick = reset; $('tbDel').onclick = removeTab; $('tbSetBody').onclick = setBody; $('tbDone').onclick = () => { setOn(false); setTool('sel'); };
     if ($('tbAddSlot')) $('tbAddSlot').onclick = () => { T.mode = 'slot'; T.slotPick = -1; T.pick = -1; panel(); draw(); toast('Tap the design where the slot should go', 2500); };
     if ($('tbRotSlot')) $('tbRotSlot').onclick = rotateSlot;
     panel(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  return { T, STD, get on() { return T.on; }, sync, down, move, up, paint, panel, setOn, outer, boxes, standard, body, merge, addSlot, rotateSlot, slots, hitSlot };
+  return { T, STD, get on() { return T.on; }, sync, down, move, up, paint, panel, setOn, outer, boxes, standard, body, merge, addSlot, rotateSlot, slots, hitSlot, bumpCentres, slotShape, isLegacyCfg };
 })();

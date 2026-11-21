@@ -97,7 +97,7 @@ window.T2 = (() => {
     $$('shDone').disabled = !SH.cur; $$('shCancel').disabled = !SH.cur; }
   function shDone() { if (!SH.cur) return; const ps = shapePaths(); if (!ps.length) { toast('The cut-off line removes the whole shape - move it or flip the side'); return; }
     pushUndo(); for (const p of ps) { if (SH.asCut) p.cut = true; S.paths.push(p); } if (SH.asCut && !S.cutOn) { S.cutOn = true; const cb = $$('cutOn'); if (cb) cb.checked = true; }
-    SH.cur = null; changed(); shUI(); toast(SH.asCut ? 'Shape added as a cut line' : 'Shape added - use Points to fine-tune it'); }
+    SH.cur = null; changed(); shUI(); toast(SH.asCut ? 'Shape added as a cut line (red)' : 'Shape added - use Points to fine-tune it'); }
   // ================= gestures =================
   function down(e, p, u, base) { const tol = tolPx(e);
     if (tool === 'shapes') { if (SH.cur) { const h = hitHandleSH(u, tol) || (insideSH(u) ? { id: 'move' } : null);
@@ -140,7 +140,7 @@ window.T2 = (() => {
         if (LN.pend) dot(LN.pend.pt, 6 * px, '#c92a2a'); }
       if (LN.mode === 'new') { if (LN.a) dot(LN.a, 6 * px, '#1971c2'); if (LN.b) dot(LN.b, 6 * px, '#1971c2'); }
       if (LN.step === 'shape' && LN.arch && LN.h) { ctx.strokeStyle = 'rgba(25,113,194,0.5)'; ctx.lineWidth = px; ctx.setLineDash([4 * px, 4 * px]); ctx.beginPath(); ctx.moveTo((LN.a[0] + LN.b[0]) / 2, (LN.a[1] + LN.b[1]) / 2); ctx.lineTo(LN.h[0], LN.h[1]); ctx.stroke(); ctx.setLineDash([]); dot(LN.h, 9 * px, '#e8590c'); } }
-    if (tool === 'shapes' && SH.cur) { const ps = shapePaths(); ctx.strokeStyle = SH.asCut ? '#777' : '#1971c2'; ctx.lineWidth = (SH.asCut ? 3.2 : 2.4) * px; ctx.beginPath(); for (const p of ps) pathD(p); ctx.stroke();
+    if (tool === 'shapes' && SH.cur) { const ps = shapePaths(); ctx.strokeStyle = SH.asCut ? '#e03131' : '#1971c2'; ctx.lineWidth = (SH.asCut ? 3.2 : 2.4) * px; ctx.beginPath(); for (const p of ps) pathD(p); ctx.stroke();
       if (SH.trim.on) { const nv = tNorm(), dv = tDir(), d = SH.trim.pos / 100, c0 = [nv[0] * d, nv[1] * d], A = L2W([c0[0] - dv[0] * 1.5, c0[1] - dv[1] * 1.5]), B = L2W([c0[0] + dv[0] * 1.5, c0[1] + dv[1] * 1.5]);
         ctx.strokeStyle = '#c92a2a'; ctx.lineWidth = 1.4 * px; ctx.setLineDash([6 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); ctx.setLineDash([]); }
       ctx.strokeStyle = 'rgba(25,113,194,0.35)'; ctx.lineWidth = px; ctx.setLineDash([4 * px, 4 * px]); ctx.beginPath(); const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(L2W); cs.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
