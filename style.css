@@ -202,3 +202,13 @@ body.home #home{place-items:start center;overflow-y:auto}
 .kindseg button.mix{opacity:.95}
 .kindseg[data-dim="1"]{opacity:.45;pointer-events:none}
 label.chk.tbfull, .hint.tbfull{grid-column:1/-1}
+
+/* v5.8: 10 tools in two rows of 5 on a phone; Trace edge + Draw the cut */
+#tools{grid-template-columns:repeat(5,1fr)}
+@media (min-width:700px){#tools{grid-template-columns:repeat(10,1fr)}}
+#teWay{flex-wrap:wrap}
+#teWay button.on,#teWay button.accent{font-weight:800}
+#coSnapL{margin:2px 0 4px;font-size:15px}
+#teHint .tecount{color:var(--dim)}
+
+#teWay button.on{background:#0c8c7a;color:#fff}

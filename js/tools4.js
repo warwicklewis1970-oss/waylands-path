@@ -4,7 +4,7 @@
 // deleteStretch, linked, setTool, tool, updStats, saveSoon, undoSt, redoSt, updUndo).
 'use strict';
 window.T4 = (() => {
-  const IDS = ['sel', 'p2p', 'draw', 'brk', 'rub', 'thick', 'cutout', 'clear'];
+  const IDS = ['sel', 'p2p', 'draw', 'brk', 'rub', 'thick', 'cutout', 'clear', 'edge'];
   const $ = id => document.getElementById(id);
   const tolT = e => (e && e.pointerType === 'mouse' ? 12 : 24) / view.s;
   const isEtch = p => p && !p.cut, isCut = p => p && p.cut;
@@ -52,7 +52,9 @@ window.T4 = (() => {
   function clipAll(list, inside, stepU, minU) { let n = 0; [...list].sort((a, b) => b - a).forEach(pi => { const r = clip(S.paths[pi], inside, stepU, minU); if (r) { replacePath(pi, r); n++; } }); return n; }
   const nearBox = (pi, x0, y0, x1, y1) => { const bb = BZ.bbox([S.paths[pi]]); return bb && !(bb.x1 < x0 || bb.x0 > x1 || bb.y1 < y0 || bb.y0 > y1); };
   // ---------- state ----------
-  const SL = { list: [], merged: null, mode: null, a: null, b: null, plan: null }, PP = { pi: -1, lastT: 0, lastU: null }, DR = { pts: null }, BR = { a: null, b: null, plan: null, mode: (localStorage.getItem('wp-brMode') === 'add' ? 'add' : 'del'), list: null, merged: null }, RB = { px: 22, mode: 'all', at: null }, TH = { pi: -1, list: null }, CO = { region: null, sel: -1, mode: 'tap', lasso: null, gap: 0 }, CL = { mode: 'area', regs: [], pts: [], grow: false, box: null };
+  const SL = { list: [], merged: null, mode: null, a: null, b: null, plan: null }, PP = { pi: -1, lastT: 0, lastU: null }, DR = { pts: null }, BR = { a: null, b: null, plan: null, mode: (localStorage.getItem('wp-brMode') === 'add' ? 'add' : 'del'), list: null, merged: null }, RB = { px: 22, mode: 'all', at: null }, TH = { pi: -1, list: null }, CO = { region: null, sel: -1, mode: 'draw', lasso: null, gap: 0, snap: (function () { try { return localStorage.getItem('wp-coSnap') !== '0'; } catch (e) { return true; } })() }, CL = { mode: 'area', regs: [], pts: [], grow: false, box: null };
+  const teMmLoad = () => { try { const v = +localStorage.getItem('wp-edgeMm'); if (v >= 0.1 && v <= 50) return Math.round(v * 10) / 10; } catch (e) {} return 2; };
+  const TE = { list: null, merged: null, a: null, b: null, way: 'short', side: 1, mm: teMmLoad(), cut: false, preview: null, src: null, closed: false };
   // ================= gestures =================
   function down(e, p, u, base) { const g = Object.assign(base, { t4: tool, kind: 't4' }), tolU = tolT(e);
     if (tool === 'sel') { g.kind = 'tap'; g.tx = view.tx; g.ty = view.ty; return g; } // drag = move the picture, tap = pick
@@ -62,7 +64,8 @@ window.T4 = (() => {
       focus = { pi: (g.node || g.seg || {}).pi, u }; draw(); return g; }
     if (tool === 'draw') { DR.pts = [u.slice()]; inkStart(p); return g; }
     if (tool === 'rub') { g.snap = snap(); g.last = u; RB.at = u; g.erased = 0; S.paths.forEach((q, i) => { q._rk = BZ.length(q) + i * 1e-6; }); draw(); return g; }
-    if (tool === 'cutout') { if (CO.mode === 'lasso') { CO.lasso = [u.slice()]; CO.region = null; CO.sel = -1; draw(); return g; }
+    if (tool === 'cutout') { if (CO.region && CO.region.user && CO.region.pts) { const j = hitDraft(u, tolU); if (j >= 0) { g.conode = j; return g; } }
+      if (CO.mode === 'lasso' || CO.mode === 'draw') { CO.lasso = [snapCutPt(u)]; CO.region = null; CO.sel = -1; draw(); return g; }
       const n = hitPt(u, tolU * 0.7, isCut); if (n) { g.node = n; g.snap = snap(); CO.sel = n.pi; } else { const h = hitLine(u, tolU * 0.5, isCut); if (h) { g.seg = h; g.snap = snap(); } }
       focus = { pi: (g.node || g.seg || {}).pi, u }; draw(); return g; }
     if (tool === 'clear') { if (CL.mode === 'poly') { let bi = -1, bd = tolU; CL.pts.forEach((q, i) => { const d = d2(q, u); if (d < bd) { bd = d; bi = i; } }); if (bi >= 0) g.cnode = bi; } return g; }
@@ -71,7 +74,8 @@ window.T4 = (() => {
     if (g.t4 === 'sel') { view.tx = g.tx + p[0] - g.p0[0]; view.ty = g.ty + p[1] - g.p0[1]; draw(); return; }
     if (g.t4 === 'draw') { if (DR.pts && d2(u, DR.pts[DR.pts.length - 1]) * view.s > 0.6) { DR.pts.push(u.slice()); inkTo(p); } return; }
     if (g.t4 === 'rub') { applyRub(g.last, u, g); g.last = u; RB.at = u; draw(); return; }
-    if (g.t4 === 'cutout' && CO.lasso) { if (d2(u, CO.lasso[CO.lasso.length - 1]) * view.s > 0.8) CO.lasso.push(u.slice()); draw(); return; }
+    if (g.t4 === 'cutout' && g.conode != null && CO.region && CO.region.pts) { CO.region.pts[g.conode] = u.slice(); coRefresh(); draw(); return; }
+    if (g.t4 === 'cutout' && CO.lasso) { if (d2(u, CO.lasso[CO.lasso.length - 1]) * view.s > 0.8) CO.lasso.push(snapCutPt(u)); draw(); return; }
     if (g.t4 === 'clear') { if (g.cnode != null) CL.pts[g.cnode] = u.slice(); else CL.box = [g.u0, u.slice()]; draw(); return; }
     if (g.node) { if (!g.moving) { const nd = S.paths[g.node.pi].n[g.node.j]; g.moving = [nd, ...linked(g.node.pi, g.node.j)]; g.lastU = g.u0; }
       const dx = u[0] - g.lastU[0], dy = u[1] - g.lastU[1]; g.lastU = u; for (const m of g.moving) BZ.moveNode(m, dx, dy); draw(); return; }
@@ -85,8 +89,10 @@ window.T4 = (() => {
     if (g.t4 === 'draw') { finishDraw(e); return; }
     if (g.t4 === 'brk') { if (!g.moved) brkTap(u, e); return; }
     if (g.t4 === 'thick') { if (!g.moved) { const h = hitAny(u, tolU); TH.list = null; TH.pi = h ? h.pi : -1; focus = null; if (!h) toast('Tap right on a line'); else if (S.paths[h.pi] && S.paths[h.pi].cut) toast('Cut lines use the cut settings (power, speed, passes) - not etch thickness. Tap Make etch if you want a thick engraved line.'); panel(); draw(); } return; }
-    if (g.t4 === 'cutout') { if (CO.mode === 'lasso' && CO.lasso) { const pts = CO.lasso; CO.lasso = null; lassoFinish(pts); return; }
+    if (g.t4 === 'cutout') { if (g.conode != null) { panel(); draw(); return; }
+      if ((CO.mode === 'lasso' || CO.mode === 'draw') && CO.lasso) { const pts = CO.lasso; CO.lasso = null; finishUserCut(pts, CO.mode); return; }
       if (g.moved) return; const onLine = (g.seg || g.node) && (g.node || hitLine(u, 9 / view.s, isCut)); if (onLine) { CO.sel = (g.seg || g.node).pi; CO.region = null; panel(); draw(); return; } CO.sel = -1; findRegion(u); return; }
+    if (g.t4 === 'edge') { if (!g.moved) teTap(u, e); return; }
     if (g.t4 === 'clear') { if (g.cnode != null) { panel(); draw(); return; } if (g.moved) { clBox(); return; } if (CL.mode === 'poly') { CL.pts.push(u.slice()); panel(); draw(); } else clTap(u); return; } }
   // live ink: drawn straight onto a see-through layer above the picture (no full redraw while drawing); cleared on pen-up
   const INK = { c: null, q: [], last: null, raf: 0 };
@@ -229,17 +235,106 @@ window.T4 = (() => {
     S.paths.forEach(p => { if (p.cut) return; const o = LZ.widthOffs(p, lw); if (!o) return; const f = BZ.flatten(p, 0.3 * px); for (const d of o) { const q = LZ.offsetPoly(f, d / k, !!p.z); ctx.moveTo(q[0][0], q[0][1]); for (let i = 1; i < q.length; i++) ctx.lineTo(q[i][0], q[i][1]); } }); ctx.stroke(); }
   const plain = p => !p.cut && !LZ.widthOffs(p, S.lineMm);
   // ================= Cut out =================
-  function lassoFinish(pts) { if (!pts || pts.length < 8) { toast('Draw a loop around the whole shape, then let go'); draw(); return; }
-    const n = pts.length, c = pts.reduce((a, q) => [a[0] + q[0] / n, a[1] + q[1] / n], [0, 0]);
-    let u = BZ.inside(pts, c) ? c : null;
-    if (!u) { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const q of pts) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
-      const G = typeof grid === 'function' ? grid() : null; const step = G ? 1 / G.s : Math.max((x1 - x0) / 40, (y1 - y0) / 40);
-      outer: for (let y = y0 + step; y < y1; y += step) for (let x = x0 + step; x < x1; x += step) { const q = [x, y]; if (!BZ.inside(pts, q)) continue; if (G) { const sx = Math.round((x - G.ox) * G.s), sy = Math.round((y - G.oy) * G.s); if (sx < 0 || sy < 0 || sx >= G.w || sy >= G.h || G.ink[sy * G.w + sx]) continue; } u = q; break outer; } }
-    if (!u) { toast('Draw the loop so it goes around the shape, with the middle of the shape inside the loop'); draw(); return; }
-    findRegion(u); }
-  function findRegion(u) { const r = shapeCutAt(u); if (r.err) { CO.region = null; toast(r.err, r.long ? 4500 : 2600); panel(); draw(); return; }
-    const done = holeAt(r); if (done >= 0) { CO.region = null; CO.sel = done; panel(); draw(); toast('That area is already a cut. Tap Make etch line to undo it.', 3200); return; }
-    CO.region = r; CO.sel = -1; panel(); draw(); }
+
+  // v5.8 Cut out: the cut is the line the user draws (or a genuine closed flood-fill region). Never join fragments with straight jumps.
+  const SNAP_MM = 1.5;
+  function snapCutPt(u) { if (!CO.snap) return u.slice(); const tol = SNAP_MM / kmm(); const h = hitAny(u, tol); if (!h || h.d > tol) return u.slice();
+    const p = S.paths[h.pi]; if (!p) return u.slice(); const r = BZ.nearest(p, u, 0.3); return (r && r.d <= tol) ? r.pt.slice() : u.slice(); }
+  function hitDraft(u, tolU) { const pts = CO.region && CO.region.pts; if (!pts) return -1; let bi = -1, bd = tolU; pts.forEach((q, i) => { const d = d2(q, u); if (d < bd) { bd = d; bi = i; } }); return bi; }
+  function strokeLen(pts) { let s = 0; for (let i = 1; i < pts.length; i++) s += d2(pts[i - 1], pts[i]); return s; }
+  function rdp(pts, eps) { if (pts.length <= 2) return pts.slice(); const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+    const stack = [[0, pts.length - 1]]; while (stack.length) { const [a, b] = stack.pop(); let mi = -1, md = 0;
+      for (let i = a + 1; i < b; i++) { const d = BZ.segD(pts[i], pts[a], pts[b])[0]; if (d > md) { md = d; mi = i; } }
+      if (mi >= 0 && md > eps) { keep[mi] = 1; stack.push([a, mi], [mi, b]); } }
+    return pts.filter((_, i) => keep[i]); }
+  function smoothClosed(pts0) { let pts = []; for (const q of pts0) { if (!pts.length || d2(pts[pts.length - 1], q) > 1e-6) pts.push(q.slice()); }
+    if (pts.length >= 2 && d2(pts[0], pts[pts.length - 1]) < 1e-6) pts.pop();
+    if (pts.length < 3) return pts;
+    // light moving average, then simplify in mm so a phone can drag the dots
+    const sm = []; const n = pts.length;
+    for (let i = 0; i < n; i++) { const a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n]; sm.push([(a[0] + b[0] * 2 + c[0]) / 4, (a[1] + b[1] * 2 + c[1]) / 4]); }
+    const eps = Math.max(0.25 / kmm(), 0.15 / kmm()); let out = rdp(sm.concat([sm[0]]), eps); if (out.length >= 2 && d2(out[0], out[out.length - 1]) < 1e-6) out.pop();
+    if (out.length > 80) { const step = Math.ceil(out.length / 80), thin = []; for (let i = 0; i < out.length; i += step) thin.push(out[i]); if (d2(thin[thin.length - 1], out[out.length - 1]) > eps) thin.push(out[out.length - 1]); out = thin; }
+    if (out.length < 3) out = sm; return out; }
+  function coRefresh() { const r = CO.region; if (!r || !r.pts || r.pts.length < 2) return; r.loop = r.pts.concat([r.pts[0]]); r.gap = 0; }
+  function cancelCutDraft() { CO.region = null; CO.lasso = null; CO.sel = -1; CO.gap = 0; panel(); draw(); }
+  function finishUserCut(pts, kind) { if (!pts || pts.length < 3 || strokeLen(pts) * kmm() < 6) { toast('Draw all the way around the area you want, then let go'); draw(); return; }
+    const sm = smoothClosed(pts); if (sm.length < 3) { toast('Draw a loop around the area, then let go'); draw(); return; }
+    CO.region = { pts: sm, loop: sm.concat([sm[0]]), kind: kind || 'draw', match: -1, sources: [], gap: 0, user: true }; CO.sel = -1; panel(); draw(); }
+  function addUserCut(loop, closed) { const pts = loop.slice(); if (closed && pts.length >= 2 && d2(pts[0], pts[pts.length - 1]) > 1e-6) pts.push(pts[0].slice());
+    const p = BZ.fromPolyline(pts, { closed: true, tol: 0.45, arm: 4, corner: 32 }); if (!p || p.n.length < 3) return null;
+    p.z = true; p.cut = true; p.uc = 1; delete p.w; delete p.dbl; return p; }
+
+  // v5.8 Trace edge helpers
+  function teClear() { TE.list = TE.merged = TE.a = TE.b = TE.preview = TE.src = null; TE.closed = false; TE.way = 'short'; }
+  function teSaveMm() { try { localStorage.setItem('wp-edgeMm', String(TE.mm)); } catch (e) {} }
+  function teSetMm(v) { let n = +v; if (!(n >= 0.1)) n = 0.1; if (n > 50) n = 50; TE.mm = Math.round(n * 10) / 10; teSaveMm(); teRebuild(); panel(); draw(); }
+  function tePoly(p) { const pts = BZ.flatten(p, 0.25); if (!pts.length) return null;
+    if (p.z && pts.length > 2 && d2(pts[0], pts[pts.length - 1]) > 1e-6) pts.push(pts[0].slice());
+    const s = [0]; for (let i = 1; i < pts.length; i++) s.push(s[i - 1] + d2(pts[i - 1], pts[i]));
+    return { pts, s, L: s[s.length - 1], z: !!p.z }; }
+  function teAtS(poly, sWant) { const { pts, s, L } = poly; let t = sWant; if (poly.z && L > 0) t = ((t % L) + L) % L; else t = Math.max(0, Math.min(L, t));
+    for (let i = 1; i < s.length; i++) if (s[i] >= t - 1e-9) { const span = Math.max(1e-12, s[i] - s[i - 1]), u = (t - s[i - 1]) / span;
+      return { i: i - 1, u, pt: [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u], s: t }; }
+    return { i: pts.length - 2, u: 1, pt: pts[pts.length - 1].slice(), s: L }; }
+  function teExtract(poly, s0, s1) { const { pts, s, L } = poly, out = []; if (L <= 0) return out;
+    const a = teAtS(poly, s0); out.push(a.pt);
+    for (let i = a.i + 1; i < pts.length; i++) { if (s[i] >= s1 - 1e-9) break; out.push(pts[i].slice()); }
+    const b = teAtS(poly, s1); if (!out.length || d2(out[out.length - 1], b.pt) > 1e-7) out.push(b.pt); return out; }
+  function teSlice(poly, s0, s1, way) { if (!poly || poly.L <= 0) return null;
+    if (way === 'whole' && poly.z) { const pts = poly.pts.slice(); if (d2(pts[0], pts[pts.length - 1]) > 1e-6) pts.push(pts[0].slice()); return { pts, closed: true }; }
+    if (!poly.z) { const a = Math.max(0, Math.min(poly.L, s0)), b = Math.max(0, Math.min(poly.L, s1)); if (Math.abs(b - a) < 1e-6) return null;
+      return { pts: a <= b ? teExtract(poly, a, b) : teExtract(poly, b, a).reverse(), closed: false }; }
+    const L = poly.L, a = ((s0 % L) + L) % L, b = ((s1 % L) + L) % L, fwd = (b - a + L) % L, back = (a - b + L) % L;
+    const useFwd = way === 'long' ? fwd >= back : fwd <= back;
+    if (useFwd) return { pts: teExtract(poly, a, a + (fwd || L)), closed: false };
+    const rev = teExtract(poly, b, b + (back || L)); return { pts: rev.reverse(), closed: false }; }
+  function tePos(merged, u) { const r = BZ.nearest(merged, u, 0.25); if (!r) return null; const poly = tePoly(merged);
+    // arc length at the nearest flatten point
+    let best = 0, bd = Infinity; if (poly) for (let i = 0; i < poly.pts.length; i++) { const d = d2(poly.pts[i], r.pt); if (d < bd) { bd = d; best = poly.s[i]; } }
+    return { pt: r.pt.slice(), d: r.d, s: best, k: r.k, t: r.t }; }
+  function teRebuild() { TE.preview = TE.src = null; if (!TE.merged) return;
+    const poly = tePoly(TE.merged); if (!poly || poly.L < 1e-6) return;
+    const whole = TE.way === 'whole' && poly.z; if (!whole && !TE.b) return;
+    const sl = whole ? teSlice(poly, 0, poly.L, 'whole') : teSlice(poly, TE.a.s, TE.b.s, poly.z ? TE.way : 'short');
+    if (!sl || sl.pts.length < 2) return; TE.src = sl;
+    const offU = (TE.mm / kmm()) * TE.side; if (Math.abs(offU) < 1e-9) { TE.preview = sl.pts.map(q => q.slice()); return; }
+    let src = sl.pts.slice(); if (sl.closed && src.length > 2 && d2(src[0], src[src.length - 1]) < 1e-6) src = src.slice(0, -1);
+    let off = BZ.offsetPoly(src, offU, { closed: !!sl.closed, join: 'mitre', mitre: 4 });
+    off = BZ.cleanOffset(src, off, offU, !!sl.closed); if (off.length < 2) { TE.preview = null; return; }
+    if (sl.closed && off.length >= 3 && d2(off[0], off[off.length - 1]) > 1e-6) off = off.concat([off[0].slice()]);
+    TE.preview = off; }
+  function teTap(u, e) { const tolU = tolT(e);
+    if (!TE.a || TE.b) { const h = hitAny(u, tolU); if (!h) { toast('Tap a line to set the start point'); return; }
+      const c = chainOf(h.pi); TE.list = c.list; TE.merged = c.merged; TE.a = tePos(c.merged, u); TE.b = null; TE.preview = TE.src = null; TE.closed = !!(c.merged && c.merged.z); TE.way = TE.closed ? 'short' : 'short';
+      if (!TE.a) { teClear(); toast('Tap right on a line'); panel(); draw(); return; }
+      panel(); draw(); return; }
+    const pos = tePos(TE.merged, u); if (!pos || pos.d > tolU * 1.8) { toast('Tap the same line for the finish point'); return; }
+    if (d2(TE.a.pt, pos.pt) < 1e-6 && !TE.closed) { toast('Tap a different point on the same line'); return; }
+    TE.b = pos; if (TE.closed && TE.way === 'whole') TE.way = 'short'; teRebuild(); panel(); draw(); }
+  function teAdd() { if (!TE.preview || TE.preview.length < 2) { toast('Pick a start and a finish first, and check the preview'); return; }
+    const closed = !!(TE.src && TE.src.closed); const p = BZ.fromPolyline(TE.preview, { closed, tol: 0.4, arm: 4, corner: 32 });
+    if (!p || p.n.length < 2) { toast('Could not make that edge line - try a different distance or section'); return; }
+    if (closed) p.z = true; if (TE.cut) { p.cut = true; p.uc = 1; S.cutOn = true; } delete p.w; delete p.dbl;
+    pushUndo(); S.paths.push(p); glow(p); teClear(); changed(); panel(); toast('Edge line added. Undo takes it back.', 3000); }
+
+  function lassoFinish(pts) { finishUserCut(pts, 'lasso'); }
+  function findRegion(u) { const r = regionAt(u);
+    const fail = () => { CO.region = null; CO.sel = -1; CO.mode = 'draw'; toast("Couldn't find a closed shape here - draw round it instead", 4200); panel(); draw(); };
+    if (r.err) { fail(); return; }
+    const loop = r.loop; if (!loop || loop.length < 4) { fail(); return; }
+    // only a genuine closed flood-fill contour - never join leftover bits with straight jumps
+    const gap = d2(loop[0], loop[loop.length - 1]) * kmm();
+    if (gap > 0.5) { fail(); return; }
+    // a leak through open strokes fills everything inside the outer cut - that is not a shape the user tapped
+    const loopA = Math.abs(T.area(loop));
+    let outerA = 0; S.paths.forEach(p => { if (!p.cut || !p.z || p.hole || p.slot) return; const a = Math.abs(T.area(BZ.flatten(p, 0.5))); if (a > outerA) outerA = a; });
+    if (outerA && loopA >= outerA * 0.7 && S.paths.some(p => !p.cut && !p.hole && p.n.length > 1)) { fail(); return; }
+    const done = holeAt(r); if (done >= 0) { const hp = S.paths[done], ha = Math.abs(T.area(BZ.flatten(hp, 0.5)));
+      if (outerA && ha >= outerA * 0.7) { fail(); return; }
+      CO.region = null; CO.sel = done; panel(); draw(); toast('That area is already a cut. Tap Make etch line to undo it.', 3200); return; }
+    const pts = loop.slice(); if (pts.length >= 2 && d2(pts[0], pts[pts.length - 1]) < 1e-6) pts.pop();
+    CO.region = { pts, loop: pts.concat([pts[0]]), kind: 'tap', match: r.match, sources: r.match >= 0 ? [r.match] : [], gap: 0, user: r.match < 0 }; CO.sel = -1; panel(); draw(); }
   // an existing cut hole that is (almost) this area
   function holeAt(r) { if (r.match >= 0 && isCut(S.paths[r.match])) return r.match; const A = Math.abs(T.area(r.loop)), c = r.loop.reduce((a, q) => [a[0] + q[0] / r.loop.length, a[1] + q[1] / r.loop.length], [0, 0]); let best = -1;
     S.paths.forEach((p, pi) => { if (!isCut(p) || !p.z) return; const f = BZ.flatten(p, 0.5); const a = Math.abs(T.area(f)); if (Math.abs(a - A) / Math.max(a, A) < 0.15 && BZ.inside(f, c)) best = pi; }); return best; }
@@ -342,15 +437,15 @@ window.T4 = (() => {
     pushUndo();
     if (src.length === 1 && (match === src[0] || sources.length === 1)) { const q = S.paths[src[0]]; q.n = p.n; q.z = true; q.cut = true; q.uc = 1; delete q.w; delete q.dbl; S.cutOn = true; if (typeof syncInputs === 'function') syncInputs(); return src[0]; }
     const drop = new Set(src); S.paths = S.paths.filter((q, i) => !drop.has(i)); S.paths.push(p); S.cutOn = true; if (typeof syncInputs === 'function') syncInputs(); return S.paths.length - 1; }
-  function doCutOut(opts) { const r = CO.region; if (!r) { toast('Tap inside an area first, or draw a lasso around the whole shape'); return; }
-    let p = r.merged ? BZ.clone([r.merged])[0] : (r.match >= 0 && S.paths[r.match] ? BZ.clone([S.paths[r.match]])[0] : (r.loop ? BZ.fromPolyline(r.loop, { closed: true, tol: 0.5, arm: 4, corner: 35 }) : null));
-    if (!p || p.n.length < 3) { toast('Could not make that cut'); return; }
-    const gap = endGapMm(p);
-    if (gap > CLOSE_AUTO_MM && !(opts && opts.close)) { CO.gap = gap; r.gap = gap; panel(); toast(gap <= CLOSE_ASK_MM ? `This cut has a gap of ${gap.toFixed(1)} mm. Tap ✓ Close the gap to join it, then it can be a cut.` : `This cut has a gap of ${gap.toFixed(1)} mm. Close it with Point to point or Break first.`, 5000); return; }
-    if (gap > 0.02) closePath(p);
-    const src = r.sources && r.sources.length ? r.sources : (r.match >= 0 ? [r.match] : []);
-    const newPi = commitWholeCut(p, src, r.match); if (r.splice) spliceEnclosure(r.splice); CO.region = null; CO.sel = -1; CO.gap = 0; changed(); panel();
-    toast('The whole outline is now one cut line (red). Undo takes it back.', 3500); }
+  function doCutOut(opts) { const r = CO.region; if (!r) { toast('Draw around the area you want, then tap ✓ Make this a cut'); return; }
+    // a drawn or lasso cut is exactly the line the user drew - add it, do not take other lines away
+    if (r.user || r.kind === 'draw' || r.kind === 'lasso' || !(r.match >= 0 && S.paths[r.match] && S.paths[r.match].z)) {
+      const p = addUserCut(r.loop || (r.pts && r.pts.concat([r.pts[0]])), true); if (!p) { toast('Could not make that cut'); return; }
+      pushUndo(); S.paths.push(p); S.cutOn = true; if (typeof syncInputs === 'function') syncInputs(); CO.region = null; CO.sel = -1; CO.gap = 0; changed(); panel();
+      toast('Cut line added (red). Undo takes it back.', 3200); return; }
+    const p = BZ.clone([S.paths[r.match]])[0]; p.cut = true; p.uc = 1; p.z = true; delete p.w; delete p.dbl;
+    commitWholeCut(p, [r.match], r.match); CO.region = null; CO.sel = -1; CO.gap = 0; changed(); panel();
+    toast('That outline is now a cut line (red). Undo takes it back.', 3200); }
   function closeCutGap() { if (CO.region && CO.region.merged) { closePath(CO.region.merged); CO.region.loop = BZ.flatten(CO.region.merged, 0.4); CO.region.gap = 0; CO.gap = 0; panel(); draw(); toast('Gap closed. Tap ✓ Make this a cut.', 3000); return; }
     doCutOut({ close: true }); }
   function makeEtch() { const p = S.paths[CO.sel]; if (!isCut(p)) return; pushUndo(); const wasOuter = !p.hole && p.uc !== 1; delete p.cut; delete p.uc; delete p.tabs; delete p.tabBase; delete p._tsig; CO.sel = -1; if (wasOuter && window.WP && WP.noteCutGone) WP.noteCutGone(); changed(); panel(); toast('That line is an etch line again'); }
@@ -405,9 +500,18 @@ window.T4 = (() => {
     if (tool === 'rub') set('t4rbOut', `${(RB.px / view.s * kmm()).toFixed(1)} mm`);
     if (tool === 'thick') { const p = TH.pi >= 0 ? S.paths[TH.pi] : null; set('t4thHint', p ? `This line: ${describe(p)}.` : 'Tap a line to pick it (it turns blue), then set its thickness.');
       if (p) { $('t4w').value = p.w || S.lineMm; $('t4wn').value = (p.w || S.lineMm); $('t4dbl').checked = !!p.dbl; if (p.dbl) $('t4dd').value = p.dbl.toFixed(2); } $('t4w').min = S.lineMm; $('t4ddRow').hidden = !$('t4dbl').checked; }
-    if (tool === 'cutout') { const gap = CO.region ? (CO.region.gap || CO.gap || 0) : 0; $('t4coGo').disabled = !CO.region || (gap > CLOSE_AUTO_MM && gap <= CLOSE_ASK_MM); const cl = $('t4coClose'); if (cl) cl.hidden = !(gap > CLOSE_AUTO_MM && gap <= CLOSE_ASK_MM); $('t4coEtch').hidden = !(CO.sel >= 0 && isCut(S.paths[CO.sel]));
-      document.querySelectorAll('[data-comode]').forEach(b => b.classList.toggle('on', b.dataset.comode === (CO.mode || 'tap')));
-      set('t4coHint', CO.region ? (gap > CLOSE_AUTO_MM ? `<b>This cut has a gap of ${gap.toFixed(1)} mm.</b> Tap ✓ Close the gap to join the ends, then it can be a cut.` : 'The <b>red outline</b> is the whole shape. Check it, then tap <b>✓ Make this a cut</b>. Nothing changes until you do.') : CO.sel >= 0 ? 'Cut line picked (blue). Drag its points to adjust, or <b>Make etch line</b> to stop cutting it.' : (() => { const nh = WP.holeCount(); const lead = nh ? `<b>${nh} cut out${nh === 1 ? '' : 's'}</b> (red). ` : ''; return CO.mode === 'lasso' ? lead + 'Draw a loop around the whole shape, then let go. The red outline will show so you can check it before you cut.' : lead + 'Tap inside an area (a star, a slot, a window). The whole outline turns red so you can check it, then tap ✓ Make this a cut. Or switch to Lasso and draw around the shape.'; })()); }
+    if (tool === 'cutout') { $('t4coGo').disabled = !CO.region; const ag = $('t4coAgain'); if (ag) ag.hidden = !(CO.region && CO.region.user); $('t4coEtch').hidden = !(CO.sel >= 0 && isCut(S.paths[CO.sel]));
+      document.querySelectorAll('[data-comode]').forEach(b => b.classList.toggle('on', b.dataset.comode === (CO.mode || 'draw')));
+      const sn = $('coSnap'); if (sn) { sn.checked = !!CO.snap; $('coSnapL').hidden = !(CO.mode === 'draw' || CO.mode === 'lasso'); }
+      const lead = (() => { const nh = WP.holeCount(); return nh ? `<b>${nh} cut out${nh === 1 ? '' : 's'}</b> (red). ` : ''; })();
+      set('t4coHint', CO.region ? (CO.region.user ? 'The <b>red line</b> is the cut you drew. Drag a <b>white dot</b> to adjust it, then tap <b>✓ Make this a cut</b>. Nothing changes until you do.' : 'The <b>red outline</b> is the closed shape. Check it, then tap <b>✓ Make this a cut</b>. Nothing changes until you do.') : CO.sel >= 0 ? 'Cut line picked (blue). Drag its points to adjust, or <b>Make etch line</b> to stop cutting it.' : (CO.mode === 'lasso' ? lead + 'Draw a loop around the area - the red cut will be the loop you drew. Let go, adjust the dots if you need to, then tap ✓ Make this a cut.' : CO.mode === 'tap' ? lead + 'Tap inside a shape that is already closed (a window, a hole). If the app cannot find a closed area, it will ask you to draw around it instead.' : lead + 'Drag your finger around the area you want to cut. The red line follows you and closes when you let go. Tick <b>Snap to lines</b> to hug nearby lines (about 1.5 mm). Then tap ✓ Make this a cut.')); }
+    if (tool === 'edge') { const mm = $('teMm'); if (mm && document.activeElement !== mm) mm.value = TE.mm;
+      const has = !!(TE.preview && TE.preview.length >= 2); $('teGo').disabled = !has; $('teSwap').disabled = !has && !(TE.a && TE.closed);
+      const way = $('teWay'); if (way) way.hidden = !TE.closed;
+      document.querySelectorAll('[data-teway]').forEach(b => b.classList.toggle('on', b.dataset.teway === TE.way));
+      const kind = $('teKind'); if (kind) kind.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.kind === 'cut') === !!TE.cut));
+      const closedNote = TE.closed ? ' This line is a loop - pick Shorter way, Longer way, or Whole loop.' : '';
+      set('teHint', !TE.a ? 'Set a <b>Distance</b>, then tap a line to set the <b>start</b> point. Tap the <b>same line</b> again for the <b>finish</b>. A teal line shows the new edge. Nothing is added until you tap <b>✓ Add this line</b>.' + closedNote : !TE.b && TE.way !== 'whole' ? (TE.closed ? 'Start is the green dot. Tap the same line for the finish, or tap <b>Whole loop</b> to offset the entire outline.' : 'Start is the green dot. Tap the <b>same line</b> for the finish point.') : !has ? 'Could not build an edge at that distance. Try a smaller Distance, or Swap side.' : 'The <b>teal line</b> is the new edge. Tap <b>⇄ Swap side</b> to flip it, change the Distance if you like, then <b>✓ Add this line</b> (Undo takes it back).'); }
     if (tool === 'clear') { const regs = clRegions(), nf = regs.length; $('t4clGo').disabled = !nf; $('t4clBack').hidden = CL.mode !== 'poly'; { const gl = $('t4clGrow'); if (gl) { gl.checked = CL.grow; gl.parentNode.hidden = CL.mode === 'poly'; } } $('t4clNo').disabled = !nf && !CL.pts.length; document.querySelectorAll('[data-clmode]').forEach(b => b.classList.toggle('on', b.dataset.clmode === CL.mode));
       const big = regs.some(r => r.kind === 'face' && (r.bb.x1 - r.bb.x0) * (r.bb.y1 - r.bb.y0) > 0.3 * (() => { const b = BZ.bbox(S.paths); return b ? b.w * b.h : Infinity; })());
       set('t4clHint', CL.mode === 'poly' ? (CL.pts.length < 3 ? `Tap points round the area (${CL.pts.length} so far, at least 3). Drag a point to move it.` : `<b>${CL.pts.length}-point area shaded</b> - tap Clear.`) :
@@ -429,20 +533,32 @@ window.T4 = (() => {
       if (BR.a) dot(BR.a, '#e8590c'); if (BR.b) dot(BR.b, '#e8590c'); }
     if (tool === 'rub' && RB.at) { ctx.strokeStyle = 'rgba(224,49,49,0.9)'; ctx.fillStyle = 'rgba(224,49,49,0.12)'; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.arc(RB.at[0], RB.at[1], RB.px * px, 0, 7); ctx.fill(); ctx.stroke(); }
     if (tool === 'thick' && TH.pi >= 0 && S.paths[TH.pi]) { ctx.strokeStyle = 'rgba(25,113,194,0.55)'; ctx.lineWidth = Math.max(6 * px, ((S.paths[TH.pi].w || S.lineMm) + (S.paths[TH.pi].dbl || 0)) / kmm() + 4 * px); ctx.beginPath(); tracePath(S.paths[TH.pi]); ctx.stroke(); }
-    if (tool === 'cutout') { if (CO.lasso && CO.lasso.length > 1) { ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2 * px; ctx.setLineDash([6 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(CO.lasso[0][0], CO.lasso[0][1]); for (const q of CO.lasso) ctx.lineTo(q[0], q[1]); ctx.stroke(); ctx.setLineDash([]); }
-      if (CO.region && CO.region.loop && CO.region.loop.length) { const l = CO.region.loop; ctx.fillStyle = 'rgba(224,49,49,0.16)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 3.2 * px; ctx.shadowColor = 'rgba(224,49,49,0.55)'; ctx.shadowBlur = 10 * px; ctx.beginPath(); ctx.moveTo(l[0][0], l[0][1]); for (const q of l) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0; }
+    if (tool === 'cutout') { if (CO.lasso && CO.lasso.length > 1) { ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2.4 * px; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(CO.lasso[0][0], CO.lasso[0][1]); for (const q of CO.lasso) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+      if (CO.region && CO.region.loop && CO.region.loop.length) { const l = CO.region.loop; ctx.fillStyle = 'rgba(224,49,49,0.16)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 3.2 * px; ctx.shadowColor = 'rgba(224,49,49,0.55)'; ctx.shadowBlur = 10 * px; ctx.beginPath(); ctx.moveTo(l[0][0], l[0][1]); for (const q of l) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+        if (CO.region.user && CO.region.pts) CO.region.pts.forEach((q, i) => { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.8 * px; ctx.beginPath(); ctx.arc(q[0], q[1], (i === 0 ? 6.5 : 5.5) * px, 0, 7); ctx.fill(); ctx.stroke(); }); }
       if (CO.sel >= 0 && isCut(S.paths[CO.sel])) { ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 2.6 * px; ctx.beginPath(); tracePath(S.paths[CO.sel]); ctx.stroke(); } }
+    if (tool === 'edge') { if (TE.merged) { ctx.strokeStyle = 'rgba(25,113,194,0.7)'; ctx.lineWidth = 4.2 * px; ctx.beginPath(); tracePath(TE.merged); ctx.stroke(); }
+      if (TE.src && TE.src.pts && TE.src.pts.length) { const s = TE.src.pts; ctx.strokeStyle = '#1971c2'; ctx.lineWidth = 3.4 * px; ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]); for (const q of s) ctx.lineTo(q[0], q[1]); if (TE.src.closed) ctx.closePath(); ctx.stroke(); }
+      if (TE.preview && TE.preview.length) { const s = TE.preview; ctx.strokeStyle = '#0c8c7a'; ctx.lineWidth = 3.2 * px; ctx.setLineDash([7 * px, 5 * px]); ctx.shadowColor = 'rgba(12,140,122,0.45)'; ctx.shadowBlur = 8 * px; ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]); for (const q of s) ctx.lineTo(q[0], q[1]); if (TE.src && TE.src.closed) ctx.closePath(); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0; }
+      const dot = (pt, c) => { if (!pt) return; ctx.fillStyle = c; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); ctx.arc(pt[0], pt[1], 6.5 * px, 0, 7); ctx.fill(); ctx.stroke(); };
+      if (TE.a) dot(TE.a.pt, '#2b8a3e'); if (TE.b) dot(TE.b.pt, '#e8590c'); }
     if (tool === 'clear') { ctx.lineJoin = 'round'; for (const r of clRegions()) { ctx.fillStyle = 'rgba(224,49,49,0.24)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = (r.kind === 'face' && CL.grow ? 4 : 2) * px; ctx.setLineDash(r.kind === 'face' && !CL.grow ? [5 * px, 4 * px] : []);
         ctx.beginPath(); ctx.moveTo(r.poly[0][0], r.poly[0][1]); for (const q of r.poly) ctx.lineTo(q[0], q[1]); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); }
       if (CL.box) { const [a, b] = CL.box; ctx.fillStyle = 'rgba(224,49,49,0.18)'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2 * px; ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); }
       if (CL.mode === 'poly') CL.pts.forEach((q, i) => { ctx.fillStyle = 'rgba(224,49,49,0.18)'; ctx.beginPath(); ctx.arc(q[0], q[1], 14 * px, 0, 7); ctx.fill(); ctx.fillStyle = i === 0 ? '#e03131' : '#fff'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 1.8 * px; ctx.beginPath(); ctx.arc(q[0], q[1], (i === 0 ? 7 : 6) * px, 0, 7); ctx.fill(); ctx.stroke(); }); } }
-  function reset() { SL.list = SL.list.filter(i => S.paths[i]); if (SL.list.length) { const c = chainOf(SL.list[0]); SL.list = c.list; SL.merged = c.merged; } else SL.merged = null; SL.mode = null; SL.a = SL.b = SL.plan = null; SL.pendingCut = null; SL.gap = 0; if (PP.live && PP.pi >= 0 && !S.paths[PP.pi]) PP.live = false; if (PP.live && PP.pi >= 0 && S.paths[PP.pi] && S.paths[PP.pi].n.length < 1) PP.live = false; brkClear(); CO.region = null; CO.lasso = null; CO.gap = 0; if (TH.pi >= S.paths.length) TH.pi = -1; if (CO.sel >= S.paths.length) CO.sel = -1; focus = null; panel(); }
-  function onTool(t, prev) { if (t !== 'sel') { SL.list = []; SL.merged = null; SL.pendingCut = null; SL.gap = 0; } SL.mode = null; SL.a = SL.b = SL.plan = null; if (prev === 'p2p' && t !== 'p2p' && PP.live) p2pDone(); brkClear(); CO.region = null; CO.lasso = null; CO.gap = 0; focus = null; if (t !== 'thick') TH.pi = -1; if (t !== 'clear') { CL.pts = []; CL.regs = []; CL.box = null; } DR.pts = null; RB.at = null; panel(); }
+  function reset() { SL.list = SL.list.filter(i => S.paths[i]); if (SL.list.length) { const c = chainOf(SL.list[0]); SL.list = c.list; SL.merged = c.merged; } else SL.merged = null; SL.mode = null; SL.a = SL.b = SL.plan = null; SL.pendingCut = null; SL.gap = 0; if (PP.live && PP.pi >= 0 && !S.paths[PP.pi]) PP.live = false; if (PP.live && PP.pi >= 0 && S.paths[PP.pi] && S.paths[PP.pi].n.length < 1) PP.live = false; brkClear(); CO.region = null; CO.lasso = null; CO.gap = 0; teClear(); if (TH.pi >= S.paths.length) TH.pi = -1; if (CO.sel >= S.paths.length) CO.sel = -1; focus = null; panel(); }
+  function onTool(t, prev) { if (t !== 'sel') { SL.list = []; SL.merged = null; SL.pendingCut = null; SL.gap = 0; } SL.mode = null; SL.a = SL.b = SL.plan = null; if (prev === 'p2p' && t !== 'p2p' && PP.live) p2pDone(); brkClear(); CO.region = null; CO.lasso = null; CO.gap = 0; if (t === 'cutout') CO.mode = 'draw'; if (t !== 'edge') teClear(); focus = null; if (t !== 'thick') TH.pi = -1; if (t !== 'clear') { CL.pts = []; CL.regs = []; CL.box = null; } DR.pts = null; RB.at = null; panel(); }
   function wire() { const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
     on('t4ppDone', p2pDone); on('t4ppUndo', undo); on('t4drUndo', undo); on('t4brOk', brkConfirm); on('t4brNo', () => { brkClear(); panel(); draw(); }); document.querySelectorAll('[data-brmode]').forEach(b => b.onclick = () => { BR.mode = b.dataset.brmode; try { localStorage.setItem('wp-brMode', BR.mode); } catch (e) {} brkClear(); panel(); draw(); }); on('t4rbUndo', undo);
-    on('t4coGo', doCutOut); on('t4coClose', closeCutGap); on('t4coEtch', makeEtch); on('slClose', closeSelGap);
-    document.querySelectorAll('[data-comode]').forEach(b => b.onclick = () => { CO.mode = b.dataset.comode; CO.lasso = null; if (CO.mode === 'lasso') { CO.region = null; CO.sel = -1; } panel(); draw(); });
-    ['slKind', 'ppKind', 'drKind'].forEach(id => { const el = $(id); if (!el) return; el.querySelectorAll('button').forEach(b => b.onclick = () => { if (id === 'slKind') applySelKind(b.dataset.kind === 'cut'); else setInkCut(b.dataset.kind === 'cut'); }); }); on('t4clGo', doClear); document.querySelectorAll('[data-clmode]').forEach(b => b.onclick = () => { CL.mode = b.dataset.clmode; CL.pts = []; panel(); draw(); }); { const gr = $('t4clGrow'); if (gr) gr.onchange = () => { CL.grow = gr.checked; panel(); draw(); }; } on('t4clBack', () => { CL.pts.pop(); panel(); draw(); }); on('t4clNo', () => { CL.regs = []; CL.box = null; CL.pts = []; panel(); draw(); });
+    on('t4coGo', doCutOut); on('t4coClose', closeCutGap); on('t4coEtch', makeEtch); on('t4coNo', cancelCutDraft); on('t4coAgain', () => { CO.region = null; CO.lasso = null; panel(); draw(); }); on('slClose', closeSelGap);
+    document.querySelectorAll('[data-comode]').forEach(b => b.onclick = () => { CO.mode = b.dataset.comode; CO.lasso = null; CO.region = null; CO.sel = -1; panel(); draw(); });
+    { const sn = $('coSnap'); if (sn) sn.onchange = () => { CO.snap = sn.checked; try { localStorage.setItem('wp-coSnap', CO.snap ? '1' : '0'); } catch (e) {} }; }
+    const stepTe = s => { teSetMm((+TE.mm || 2) + s); };
+    on('teMmM', () => stepTe(-0.1)); on('teMmP', () => stepTe(0.1));
+    { const mm = $('teMm'); if (mm) { mm.oninput = () => { const v = +mm.value; if (v >= 0.1 && v <= 50) { TE.mm = Math.round(v * 10) / 10; teSaveMm(); teRebuild(); draw(); } }; mm.onchange = () => teSetMm(mm.value); } }
+    on('teSwap', () => { TE.side *= -1; teRebuild(); panel(); draw(); }); on('teNo', () => { teClear(); panel(); draw(); }); on('teGo', teAdd);
+    document.querySelectorAll('[data-teway]').forEach(b => b.onclick = () => { TE.way = b.dataset.teway; if (TE.way === 'whole' && TE.a && TE.closed) { if (!TE.b) TE.b = TE.a; teRebuild(); } else teRebuild(); panel(); draw(); });
+    ['slKind', 'ppKind', 'drKind', 'teKind'].forEach(id => { const el = $(id); if (!el) return; el.querySelectorAll('button').forEach(b => b.onclick = () => { if (id === 'slKind') applySelKind(b.dataset.kind === 'cut'); else if (id === 'teKind') { TE.cut = b.dataset.kind === 'cut'; panel(); draw(); } else setInkCut(b.dataset.kind === 'cut'); }); }); on('t4clGo', doClear); document.querySelectorAll('[data-clmode]').forEach(b => b.onclick = () => { CL.mode = b.dataset.clmode; CL.pts = []; panel(); draw(); }); { const gr = $('t4clGrow'); if (gr) gr.onchange = () => { CL.grow = gr.checked; panel(); draw(); }; } on('t4clBack', () => { CL.pts.pop(); panel(); draw(); }); on('t4clNo', () => { CL.regs = []; CL.box = null; CL.pts = []; panel(); draw(); });
     on('t4thAll', () => applyThick(true)); on('t4slDel', () => selAct('del')); on('t4slBrkB', () => selAct('brk')); on('t4slTh', () => selAct('thick'));
     on('t4slOk', selConfirm); on('t4slNo', () => { SL.mode = null; SL.a = SL.b = SL.plan = null; panel(); draw(); });
     if (typeof tool !== 'undefined' && tool === 'move') setTool('sel'); on('t4coOut', () => WP.openMenu('sec-size'));
@@ -455,5 +571,5 @@ window.T4 = (() => {
       const stepDD = s => { let v = Math.round(((+dd.value || 0) + s) * 100) / 100; v = Math.max(0.01, Math.min(20, v)); dd.value = v.toFixed(2); if (dbl.checked) applyThick(false); };
       on('t4ddM', () => stepDD(-0.01)); on('t4ddP', () => stepDD(0.01)); dd.onchange = () => stepDD(0); } }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  return { INK, regionAt, clRegions, SL, chainOf, shapeOf, selAct, applySelKind, selConfirm, IDS, down, move, up, cancelG, paint, paintThick, plain, panel, reset, onTool, clip, hitEtch, PP, BR, RB, TH, CO, CL, p2pDone, brkConfirm, doCutOut, closeCutGap, doClear, applyThick, findRegion, setInkCut, get inkCut() { return inkCut; }, markInk };
+  return { INK, regionAt, clRegions, SL, chainOf, shapeOf, selAct, applySelKind, selConfirm, IDS, down, move, up, cancelG, paint, paintThick, plain, panel, reset, onTool, clip, hitEtch, PP, BR, RB, TH, CO, CL, TE, p2pDone, brkConfirm, doCutOut, closeCutGap, doClear, applyThick, findRegion, finishUserCut, cancelCutDraft, teTap, teRebuild, teAdd, teClear, setInkCut, get inkCut() { return inkCut; }, markInk };
 })();

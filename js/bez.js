@@ -174,6 +174,90 @@ const BZ = (() => {
   function countNodes(paths) { return paths.reduce((a, p) => a + p.n.length, 0); }
   // simple polyline path (import / pen fallback)
   function fromPoints(pts, closed) { return { n: pts.map(q => node(q[0], q[1])), z: !!closed }; }
-  return { node, nseg, seg, at, d1, split, flatten, flatSegs, bbox, nearest, length, fitCubic, fromPolyline, mergeCollinear, reverse, moveNode, insertNode, deleteNode, setSmooth, makeLine, makeCurve, bend, breakAt, deleteSeg, cutOut, join, crossings, pathCrossings, inside, pointAt, paramAt, locate, countNodes, fromPoints, clone, segD, dist, resampleArc };
+
+  // v5.8: offset a polyline by a signed distance (positive = left of the travel direction).
+  // Convex corners use a mitre until the tip would be too long, then a round join. Tight
+  // inward corners that would invert are skipped and cleaned afterwards so we do not get self-loops.
+  function lineHit(a, b, c, d) { const x1=a[0],y1=a[1],x2=b[0],y2=b[1],x3=c[0],y3=c[1],x4=d[0],y4=d[1];
+    const den=(x1-x2)*(y3-y4)-(y1-y2)*(x3-x4); if (Math.abs(den) < 1e-12) return null;
+    const t=((x1-x3)*(y3-y4)-(y1-y3)*(x3-x4))/den, u=-((x1-x2)*(y1-y3)-(y1-y2)*(x1-x3))/den;
+    return { pt: [x1+t*(x2-x1), y1+t*(y2-y1)], t, u }; }
+  function uniqPts(pts, closed, eps) { const o=[]; for (const q of pts) { if (!o.length || dist(o[o.length-1], q) > eps) o.push(q.slice()); }
+    if (closed && o.length > 2 && dist(o[0], o[o.length-1]) <= eps) o.pop(); return o; }
+  function offsetPoly(pts0, off, opt = {}) { const closed = !!opt.closed, join = opt.join || 'mitre', mitre = opt.mitre || 4;
+    const P = uniqPts(pts0, closed, 1e-7); const n = P.length; if (n < 2 || !off) return P.map(q => q.slice());
+    const at = i => P[(i + n) % n];
+    const nrm = (a, b) => { const dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy); return L < 1e-12 ? null : [-dy/L*off, dx/L*off]; };
+    const out = [];
+    const start = closed ? 0 : 0, end = closed ? n : n;
+    for (let i = 0; i < n; i++) {
+      if (!closed && i === 0) { const v = nrm(P[0], P[1]); if (v) out.push([P[0][0]+v[0], P[0][1]+v[1]]); continue; }
+      if (!closed && i === n - 1) { const v = nrm(P[n-2], P[n-1]); if (v) out.push([P[n-1][0]+v[0], P[n-1][1]+v[1]]); continue; }
+      const a = at(i-1), b = at(i), c = at(i+1), v0 = nrm(a,b), v1 = nrm(b,c);
+      if (!v0 && v1) { out.push([b[0]+v1[0], b[1]+v1[1]]); continue; }
+      if (!v1 && v0) { out.push([b[0]+v0[0], b[1]+v0[1]]); continue; }
+      if (!v0 || !v1) continue;
+      const d0 = [b[0]-a[0], b[1]-a[1]], d1 = [c[0]-b[0], c[1]-b[1]], cr = d0[0]*d1[1]-d0[1]*d1[0];
+      const convex = off >= 0 ? cr > 1e-12 : cr < -1e-12;
+      const A1 = [a[0]+v0[0], a[1]+v0[1]], B1 = [b[0]+v0[0], b[1]+v0[1]], B2 = [b[0]+v1[0], b[1]+v1[1]], C2 = [c[0]+v1[0], c[1]+v1[1]];
+      const hit = lineHit(A1, B1, B2, C2);
+      if (convex) {
+        const mlen = hit ? dist(b, hit.pt) : Infinity;
+        if (join !== 'round' && hit && mlen <= mitre * Math.abs(off)) { out.push(hit.pt); continue; }
+        const ang0 = Math.atan2(v0[1], v0[0]), ang1 = Math.atan2(v1[1], v1[0]); let da = ang1 - ang0;
+        if (off >= 0) { while (da <= 0) da += Math.PI*2; while (da > Math.PI*2) da -= Math.PI*2; }
+        else { while (da >= 0) da -= Math.PI*2; while (da < -Math.PI*2) da += Math.PI*2; }
+        const steps = Math.max(1, Math.ceil(Math.abs(da) / (Math.PI/12)));
+        for (let k = 0; k <= steps; k++) { const th = ang0 + da*k/steps; out.push([b[0]+Math.cos(th)*Math.abs(off), b[1]+Math.sin(th)*Math.abs(off)]); }
+      } else if (hit) {
+        const okT = hit.t > -0.15 && hit.t < 1.5, okU = hit.u > -0.5 && hit.u < 1.15;
+        if (okT && okU) out.push(hit.pt);
+        else { out.push(B1); if (dist(B1, B2) > 1e-8) out.push(B2); }
+      } else { out.push(B1); if (dist(B1, B2) > 1e-8) out.push(B2); }
+    }
+    return uniqPts(out, closed, Math.abs(off) * 1e-4);
+  }
+  function distPoly(poly, q) { let dm = Infinity; for (let i = 0, j = poly.length-1; i < poly.length; j = i++) { const d = segD(q, poly[j], poly[i])[0]; if (d < dm) dm = d; } return dm; }
+  function segHits(a, b, c, d) { if (Math.max(a[0],b[0]) < Math.min(c[0],d[0]) - 1e-9 || Math.max(c[0],d[0]) < Math.min(a[0],b[0]) - 1e-9 || Math.max(a[1],b[1]) < Math.min(c[1],d[1]) - 1e-9 || Math.max(c[1],d[1]) < Math.min(a[1],b[1]) - 1e-9) return null;
+    const h = lineHit(a,b,c,d); if (!h) return null; if (h.t > 1e-4 && h.t < 1-1e-4 && h.u > 1e-4 && h.u < 1-1e-4) return h; return null; }
+  // drop collapsed cusps and cut out tiny self-loops, keeping stretches that stay about |off| from the source
+  function closeIf(pts, closed, want) { if (!closed || !pts || pts.length < 3) return pts || []; const q = uniqPts(pts, true, (want||0)*0.02 || 1e-6); if (q.length >= 3 && dist(q[0], q[q.length-1]) > 1e-7) q.push(q[0].slice()); return q; }
+  function cleanOffset(src, offPts, off, closed) { const want = Math.abs(off); if (want < 1e-9 || offPts.length < 2) return offPts;
+    const lo = want * 0.35, hi = want * 4.2, srcC = src;
+    let pts = offPts.filter((q, i) => { if (!closed && (i === 0 || i === offPts.length-1)) return true; const d = distPoly(srcC, q); return d >= lo && d <= hi; });
+    pts = uniqPts(pts, closed, want * 0.02); if (pts.length < 2) return offPts;
+    // cut self-intersections: walk, at each crossing start a new piece; keep pieces whose mid is ~want from src
+    const n = pts.length, segs = closed ? n : n-1;
+    const cuts = []; // {i, t, j, u, pt}
+    for (let i = 0; i < segs; i++) { const a = pts[i], b = pts[(i+1)%n];
+      for (let j = i+2; j < segs; j++) { if (closed && i === 0 && j === segs-1) continue; const h = segHits(a, b, pts[j], pts[(j+1)%n]); if (h) cuts.push({ i, t: h.t, j, u: h.u, pt: h.pt }); } }
+    if (!cuts.length) { const kept = closeIf(pts, closed, want); if (closed && kept.length < 4 && offPts.length >= 3) return closeIf(offPts, true, want); return kept; }
+    // build pieces between intersection vertices by inserting hits and splitting
+    const at = []; for (let i = 0; i < n; i++) at[i] = [{ t: 0, pt: pts[i] }, { t: 1, pt: pts[(i+1)%n] }];
+    for (const c of cuts) { at[c.i].push({ t: c.t, pt: c.pt }); at[c.j].push({ t: c.u, pt: c.pt }); }
+    for (const arr of at) arr.sort((a,b) => a.t - b.t);
+    const pieces = [];
+    const used = new Set();
+    // gather each edge-fragment midpoint
+    for (let i = 0; i < segs; i++) { for (let k = 0; k < at[i].length-1; k++) { const A = at[i][k], B = at[i][k+1]; if (dist(A.pt, B.pt) < 1e-8) continue;
+        const mid = [(A.pt[0]+B.pt[0])/2, (A.pt[1]+B.pt[1])/2], d = distPoly(srcC, mid);
+        if (d >= lo && d <= hi) pieces.push([A.pt, B.pt]); } }
+    if (!pieces.length) { if (closed && offPts.length >= 3) return uniqPts(offPts, true, want*0.02).concat([]); return offPts; }
+    // stitch connected fragments
+    const chains = []; const left = pieces.map(p => p.map(q => q.slice()));
+    while (left.length) { let ch = left.pop(); let grew = true;
+      while (grew) { grew = false; for (let i = left.length-1; i >= 0; i--) { const p = left[i], h = ch[0], t = ch[ch.length-1];
+          if (dist(t, p[0]) < 1e-6) { ch = ch.concat(p.slice(1)); left.splice(i,1); grew = true; }
+          else if (dist(t, p[p.length-1]) < 1e-6) { ch = ch.concat(p.slice().reverse().slice(1)); left.splice(i,1); grew = true; }
+          else if (dist(h, p[p.length-1]) < 1e-6) { ch = p.slice(0,-1).concat(ch); left.splice(i,1); grew = true; }
+          else if (dist(h, p[0]) < 1e-6) { ch = p.slice().reverse().slice(0,-1).concat(ch); left.splice(i,1); grew = true; } } }
+      chains.push(ch); }
+    chains.sort((a,b) => b.length - a.length);
+    let best = chains[0];
+    if (closed) { const loop = chains.find(c => c.length >= 3 && dist(c[0], c[c.length-1]) < want*0.2) || (best.length>=3 ? best.concat([best[0]]) : best); const cleaned = closeIf(uniqPts(loop, true, want*0.02), true, want); if (cleaned.length >= 4) return cleaned; return closeIf(offPts, true, want); }
+    return uniqPts(best, false, want*0.02);
+  }
+
+  return { node, nseg, seg, at, d1, split, flatten, flatSegs, bbox, nearest, length, fitCubic, fromPolyline, mergeCollinear, reverse, moveNode, insertNode, deleteNode, setSmooth, makeLine, makeCurve, bend, breakAt, deleteSeg, cutOut, join, crossings, pathCrossings, inside, pointAt, paramAt, locate, countNodes, fromPoints, clone, segD, dist, resampleArc, offsetPoly, cleanOffset, lineHit, distPoly };
 })();
 if (typeof module !== 'undefined') module.exports = BZ;

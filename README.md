@@ -39,6 +39,14 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a red outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.8 - Draw the cut, and Trace edge
+
+- **Cut out › ✏ Draw the cut** (the usual way): drag your finger around the area you want. The red line follows you, snaps to nearby lines if you leave Snap to lines ticked (about 1.5 mm, only where a line is close), and closes when you let go. Drag the white dots to adjust, then tap **✓ Make this a cut** or **✕ Cancel**. The cut is exactly the line you drew - the app no longer invents zig-zag joins between leftover bits.
+- **👆 Tap an area** only uses a genuinely closed region (a flood-fill of the white area, traced as one smooth loop). If it cannot find one, it says "Couldn't find a closed shape here - draw round it instead" and switches to Draw the cut.
+- **➰ Lasso** in Cut out: the cut is the loop you drew, not a guess at the lines inside it.
+- **Trace edge** (new toolbar tool): type a Distance (default 2 mm, remembered), tap a start and a finish on a line, preview a teal parallel line, **⇄ Swap side**, **ETCH | CUT**, then **✓ Add this line**. Closed lines offer Shorter way / Longer way / Whole loop. Undo takes it back.
+- Laser settings are unchanged. Saved projects you do not add a cut or an edge line to stay byte-identical to v5.7. New cuts and edge lines use the existing etch/cut power, speed, passes and order (etch first, holes and slots, then the outside cut).
+
 ## v5.7 - Red cuts, whole-shape cuts, and crush bumps every 5 mm
 
 - **Red = CUT, black = ETCH.** Cut lines (the outside, holes, slots and tabs) show in red on screen, with a small key on the stage. Engraved lines stay black. This is a screen colour only: G-code and the SVG in a saved project are unchanged if you don't switch a line or add new tabs/slots.

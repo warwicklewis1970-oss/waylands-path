@@ -66,6 +66,7 @@
       <button data-tool="cutout" class="tool" title="Tap inside an area to cut it out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke="#9aa0a4" stroke-width="2.6" fill="none"/><rect x="8" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.2 1.8" fill="none"/></svg><span>Cut out</span></button>
       <button data-tool="clear" class="tool" title="Tap areas (or drag a box), then clear every line inside"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6 L18 4 L20 17 L7 20 Z" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2" fill="none"/><path d="M9 10 L15 15 M15 10 L9 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Clear space</span></button>
       <button data-tool="clone" class="tool" title="Clone: copy a line, shape, hole or a whole group (lasso / box), then size, turn and move it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.25"/></svg><span>Clone</span></button>
+      <button data-tool="edge" class="tool" title="Trace edge: draw a line alongside another, at a distance you set"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5 C8 4.5, 16 4.5, 20.5 17.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M5.2 19.2 C9 8.2, 15 8.2, 18.8 19.2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="2.4 2"/></svg><span>Trace edge</span></button>
     </div>
     <div id="toolOpts">
       <div data-opts="move" class="topts">Pick a tool. With no tool picked, one finger moves the picture. Two fingers always move and zoom.</div>
@@ -89,9 +90,10 @@
         <label class="rg"><span>Thickness</span><input type="range" id="t4w" min="0.3" max="3" step="0.05" value="0.3"><input type="number" id="t4wn" class="num" inputmode="decimal" min="0" max="10" step="0.05" value="0.3"><span class="u">mm</span></label>
         <div class="t4b"><label class="chk"><input type="checkbox" id="t4dbl">Double line</label><span id="t4ddRow" class="stepper" hidden><span class="lbl2">Distance between lines</span><button id="t4ddM" aria-label="Less">−</button><input type="number" id="t4dd" class="num" inputmode="decimal" min="0.01" max="20" step="0.01" value="0.50"><button id="t4ddP" aria-label="More">+</button><span class="u">mm</span></span><button id="t4thAll">Apply to all lines</button></div></div>
       <div data-opts="cutout" class="topts t4p" hidden>
-        <div class="seg wide2" id="coMode"><button type="button" data-comode="tap" class="on">👆 Tap an area</button><button type="button" data-comode="lasso">➰ Lasso</button></div>
+        <div class="seg wide3" id="coMode"><button type="button" data-comode="draw" class="on">✏ Draw the cut</button><button type="button" data-comode="tap">👆 Tap an area</button><button type="button" data-comode="lasso">➰ Lasso</button></div>
+        <label class="chk" id="coSnapL"><input type="checkbox" id="coSnap" checked> Snap to lines</label>
         <div class="t4h" id="t4coHint"></div>
-        <div class="t4b"><button id="t4coGo" class="accent big2">✓ Make this a cut</button><button id="t4coClose" hidden>✓ Close the gap</button><button id="t4coEtch" hidden>Make etch line</button><button id="t4coOut">Outer cut…</button></div></div>
+        <div class="t4b"><button id="t4coGo" class="accent big2">✓ Make this a cut</button><button id="t4coAgain" hidden>✏ Draw again</button><button id="t4coNo">✕ Cancel</button><button id="t4coEtch" hidden>Make etch line</button><button id="t4coOut">Outer cut…</button></div></div>
       <div data-opts="clear" class="topts t4p" hidden><div class="seg clseg"><button data-clmode="area" class="on">👆 Tap areas</button><button data-clmode="poly">📍 Points (advanced)</button></div><div class="t4h" id="t4clHint"></div><label class="clgrow"><input type="checkbox" id="t4clGrow"> Include border lines (e.g. the window frame)</label><div class="t4b"><button id="t4clNo">✕ Unselect all</button><button id="t4clBack">↶ Last point</button><button id="t4clGo" class="danger big2">🧹 Clear</button></div></div>
       <div data-opts="tarea" class="topts t4p" id="taBox" hidden>
         <div class="seg wide3" id="taMode"><button data-tamode="lasso">➰ Lasso</button><button data-tamode="box">⬚ Box</button></div>
@@ -118,6 +120,13 @@
           <div class="cnrow cnflip"><button id="cnFH" title="Mirror it left to right">↔ Flip horizontal</button><button id="cnFV" title="Mirror it top to bottom">↕ Flip vertical</button></div>
           <div class="nudge cnnudge"><span class="lbl2">Move</span><button data-cnnudge="-1,0" aria-label="Move left">◀</button><button data-cnnudge="0,-1" aria-label="Move up">▲</button><button data-cnnudge="0,1" aria-label="Move down">▼</button><button data-cnnudge="1,0" aria-label="Move right">▶</button><select id="cnStep" aria-label="Move step"><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="5">5 mm</option><option value="10">10 mm</option></select></div>
         </div>
+      </div>
+      <div data-opts="edge" class="topts t4p" hidden>
+        <div class="stepper" id="teDistRow"><span class="lbl2">Distance</span><button type="button" id="teMmM" aria-label="Less">−</button><input type="number" id="teMm" class="num" inputmode="decimal" min="0.1" max="50" step="0.1" value="2"><button type="button" id="teMmP" aria-label="More">+</button><span class="u">mm</span></div>
+        <div class="t4h" id="teHint"></div>
+        <div class="t4b" id="teWay" hidden><button type="button" data-teway="short">Shorter way</button><button type="button" data-teway="long">Longer way</button><button type="button" data-teway="whole">Whole loop</button></div>
+        <div class="seg kindseg" id="teKind"><button type="button" data-kind="etch" class="on">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="t4b"><button type="button" id="teSwap">⇄ Swap side</button><button type="button" id="teNo">✕ Cancel</button><button type="button" id="teGo" class="accent big2">✓ Add this line</button></div>
       </div>
       <div data-opts="nodes" class="topts nopts" hidden>
         <div class="selinfo" id="selInfo">Tap a line to show its points</div>
