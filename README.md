@@ -39,6 +39,12 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.6 - Sharper traces, tabs and slots, add another picture
+- Line art is traced as tight contours (both edges of each stroke, sharp star tips, smooth curves, rings and faces kept). Pictures are enlarged first. Photo tracing is unchanged.
+- **Tabs & slots:** tabs on a chosen edge (Bottom / Top / Left / Right), matching slots you tap to place and can turn 90°, crush bumps, and a Kerf setting (how much wood the laser burns away). Tabs are cut a little larger and slots a little smaller so the finished sizes match the typed boxes. Standard (all adjustable): 10 × 4 mm tabs, 2 tabs, 35 mm gap, 0.15 × 0.8 mm bumps, 4 mm plywood, 10 × 3.9 mm slots, 0.1 mm kerf. No bases are built. Reset to defaults is in the panel.
+- **Add another picture** (Menu › Picture): traces a second line drawing or photo and places it as a group you can move, size, turn or flip, then ✓ Done. Optional: only keep lines inside the grey outside cut. Undo takes it off.
+- Saved projects that do not use the new tabs, slots or overlay stay byte-identical on export. New traces of a picture will differ (more faithful). Cut settings are unchanged.
+
 ## v5.5 - Cleaner tracing, and you can edit the outside cut
 - Bold black-and-white line art (thick outlined shapes, stars, moons, faces) keeps both edges of each stroke, plus eyes, smiles, rings, slots and holes.
 - The grey cut line follows the real outer outline of the piece. It is not a coarse blob, and a line is only omitted from the etching when it really is that same outer line.

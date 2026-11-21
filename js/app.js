@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.5';
+const APP_VERSION = 'v5.6';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -115,7 +115,7 @@ function cutInfo() { const el = $('cutInfo'); if (!el) return; const c = cuts(),
 const holeCount = () => innerCuts().filter(p => p.z).length;
 function innerCuts() { const c = cuts(); if (!c.length) return []; const ab = BZ.bbox(etch().concat(c)), A = ab ? ab.w * ab.h : 0, polys = c.map(p => BZ.flatten(p, 0.5));
   const dep = c.length > 1 ? LZ.cutDepths(polys) : [0]; return c.filter((p, i) => { const b = BZ.bbox([p]); return dep[i] > 0 || (b && b.w * b.h < A * 0.25); }); }
-const isOuterCut = p => p && p.cut && !p.hole && !innerCuts().includes(p);
+const isOuterCut = p => p && p.cut && !p.hole && !p.slot && !innerCuts().includes(p);
 const hasOuterCut = () => cuts().some(isOuterCut);
 // v5.5: if they delete the outside cut, don't put it back on a retrace or a new auto-cut
 function noteCutGone() { if (!hasOuterCut()) S.noAutoCut = 1; }
@@ -178,7 +178,34 @@ function startProject(name) { const keep = { widthMm: S.widthMm, lineMm: S.lineM
 // v5.1 two projects never share a name in My projects (opening the same picture twice gives "dog 2", "dog 3" ...)
 function uniqueSoon() { if (!window.PJ || !PJ.uniqueName) return; const pid = S.pid, n0 = S.name; PJ.uniqueName(n0, pid).then(n => { if (S.pid === pid && S.name === n0 && n !== n0) { S.name = n; syncInputs(); saveSoon(); } }).catch(() => {}); }
 ['homeFile', 'stageFile', 'panelFile'].forEach(id => $(id).addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openFile(f); }));
+
+async function overlayFile(file, kind = 'line') { if (!file) return; if (!S.paths.length && !S.src) { toast('Open a project first, then add another picture.', 3500); return; }
+  try { $('busy').textContent = 'Tracing the new picture…'; $('busy').hidden = false;
+    let list;
+    if ((/svg/i.test(file.type) || /\.svg$/i.test(file.name)) && kind !== 'photo') { const r = SVGIN.importSVG(await file.text()); list = (r.paths || []).filter(p => !p.cut && !p.hole); }
+    else { const el = await loadImage(file), sc = Math.min(1, 2400 / Math.max(el.width, el.height)), w = Math.max(1, Math.round(el.width * sc)), h = Math.max(1, Math.round(el.height * sc));
+      const alphaOk = /png|gif|webp/i.test(file.type), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); if (!alphaOk) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } g.drawImage(el, 0, 0, w, h);
+      const d = g.getImageData(0, 0, w, h), img = { data: d.data, w, h }, opts = Object.assign({}, S.trace, { kind: kind === 'photo' ? 'photo' : 'line' });
+      if (opts.kind === 'photo') opts.photo = Object.assign({}, photoLast(), S.trace.photo || {});
+      const r = await runTrace(img, opts); if (r.error) throw new Error(r.error); list = (r.paths || []).filter(p => !p.cut && !p.hole); }
+    $('busy').hidden = true; if (!list || !list.length) { toast('No lines found in that picture.'); return; }
+    const src = BZ.bbox(list), dest = BZ.bbox(S.paths.filter(p => !p.hole && !p.slot)); if (!src || src.w < 1e-6) { toast('No lines found in that picture.'); return; }
+    const want = dest ? dest.w * 0.5 : 80 / kmm(), sc2 = want / src.w, cx = (src.x0 + src.x1) / 2, cy = (src.y0 + src.y1) / 2, tx = dest ? (dest.x0 + dest.x1) / 2 : 0, ty = dest ? (dest.y0 + dest.y1) / 2 : 0;
+    const xfpt = (x, y) => [tx + (x - cx) * sc2, ty + (y - cy) * sc2];
+    const xfNode = nd => { const q = xfpt(nd.x, nd.y), o = Object.assign({}, nd, { x: q[0], y: q[1] }); if (nd.i) { const a = xfpt(nd.i[0], nd.i[1]); o.i = a; } if (nd.o) { const a = xfpt(nd.o[0], nd.o[1]); o.o = a; } return o; };
+    list = list.map(p => { const q = Object.assign(BZ.clone(p), { n: p.n.map(xfNode) }); delete q.cut; delete q.uc; delete q.tabs; delete q.tabBase; delete q._tsig; delete q.hole; delete q.slot; return q; });
+    const clip = $('ovClip') && $('ovClip').checked, E = window.TB && TB.outer && TB.outer();
+    if (clip && E && window.CN && CN.trimPath) { const poly = BZ.flatten(E, 0.35), lp = BZ.fromPoints(poly, true), pb = CN.pbox(poly), kept = [];
+      for (const p of list) { if (!CN.touches(p, poly, lp, pb)) continue; kept.push(...CN.trimPath(p, poly, lp)); } list = kept; if (!list.length) { toast('None of the new lines sit inside the outside cut.'); return; } }
+    pushUndo(); const gid = 'ov' + Date.now().toString(36);
+    for (const q of list) { q.xf = { g: gid, o: BZ.clone(q.n), b: BZ.clone(q.n), sx: 1, sy: 1, r: 0, dx: 0, dy: 0, copy: true }; S.paths.push(q); }
+    closeMenu(); if (typeof setTool === 'function') setTool('clone'); if (window.CN && CN.choose) CN.choose(list, true);
+    toast(`Added ${list.length} line${list.length > 1 ? 's' : ''} from the new picture. Move, size, turn or flip, then ✓ Done. Undo takes it off.`, 4500); }
+  catch (e) { $('busy').hidden = true; console.error(e); toast(e.message || 'Could not add that picture.', 4000); } }
+
 ['homePhoto', 'panelPhoto'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openFile(f, 'photo'); }); });
+['overlayLine'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; overlayFile(f, 'line'); }); });
+['overlayPhoto'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; overlayFile(f, 'photo'); }); });
 // ---------- inputs ----------
 function syncInputs() { $('nameBtn').textContent = (S.name || 'Untitled') + ' ✎'; $('detail').value = S.trace.detail; $('detailOut').textContent = S.trace.detail; $('corners').value = S.trace.corners; $('cornersOut').textContent = S.trace.corners;
   traceModeUI(); traceKindUI(); photoBgUI(); $('faint').value = S.trace.faint == null ? 4 : S.trace.faint; $('faintOut').textContent = $('faint').value; sheetUI(); $('straighten').checked = S.trace.straighten !== false; $('showPhoto').checked = S.showPhoto; $('widthMm').value = S.widthMm; $('lineMm').value = S.lineMm;
@@ -584,7 +611,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: cleaner line-art tracing, and you can edit or delete the grey outside cut'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: sharper line-art tracing, tabs and slots with kerf, and add another picture'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -631,4 +658,4 @@ $('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromFor
 $('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
 setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
-window.WP = { photoLast, paint, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { photoLast, paint, overlayFile, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };

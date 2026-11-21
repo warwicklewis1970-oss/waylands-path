@@ -152,11 +152,18 @@
           <button data-shape="p8" title="Octagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="15.8,2.8 21.2,8.2 21.2,15.8 15.8,21.2 8.2,21.2 2.8,15.8 2.8,8.2 8.2,2.8" fill="currentColor"/></svg><span>8 sides</span></button>
           <button data-shape="star" title="Star"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12.0,2.0 14.5,8.6 21.5,8.9 16.0,13.3 17.9,20.1 12.0,16.2 6.1,20.1 8.0,13.3 2.5,8.9 9.5,8.6" fill="currentColor"/></svg><span>Star</span></button>
           <button data-hole="1" class="hhbtn" title="Hanging hole: an exact round hole, size typed in mm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg><span>Hanging hole</span></button>
-          <button data-tabs="1" class="hhbtn" title="Tabs on the bottom edge for a stand: sizes typed in mm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v11h-4v5h-4v-5h-4v5H6v-5H2z" fill="currentColor"/></svg><span>Tabs</span></button>
+          <button data-tabs="1" class="hhbtn" title="Tabs and slots, with kerf and crush bumps"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v11h-4v5h-4v-5h-4v5H6v-5H2z" fill="currentColor"/></svg><span>Tabs &amp; slots</span></button>
         </div>
         <div id="tbBox" class="tbbox">
           <div class="hintbar" id="tbHint"></div>
           <div class="hint" id="tbBodyInfo"></div>
+          <div class="lbl">Put the tabs on this edge</div>
+          <div class="seg wide4" id="tbEdge">
+            <button type="button" data-tbedge="bottom">Bottom</button>
+            <button type="button" data-tbedge="top">Top</button>
+            <button type="button" data-tbedge="left">Left</button>
+            <button type="button" data-tbedge="right">Right</button>
+          </div>
           <div class="tbgrid">
             <label>Tab width <span><input type="number" id="tbW" inputmode="decimal" min="1" max="200" step="0.1"> mm</span></label>
             <label>Tab depth <span><input type="number" id="tbP" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
@@ -165,12 +172,18 @@
             <label class="chk tbfull"><input type="checkbox" id="tbBump">Crush bumps on the tab sides (tight fit in the slot)</label>
             <label>Bump size <span><input type="number" id="tbBh" inputmode="decimal" min="0" max="2" step="0.01"> mm</span></label>
             <label>Bump width <span><input type="number" id="tbBw" inputmode="decimal" min="0.1" max="10" step="0.1"> mm</span></label>
+            <label>Plywood thickness <span><input type="number" id="tbTh" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
+            <label>Kerf <span><input type="number" id="tbKerf" inputmode="decimal" min="0" max="1" step="0.01"> mm</span></label>
+            <label>Slot width <span><input type="number" id="tbSW" inputmode="decimal" min="0.5" max="200" step="0.1"> mm</span></label>
+            <label>Slot height <span><input type="number" id="tbSH" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
             <label>Body height <span><input type="number" id="tbBody" inputmode="decimal" min="5" max="2000" step="0.5"> mm</span></label>
             <button id="tbSetBody">↕ Set body height</button>
           </div>
-          <div class="row"><button id="tbStd" class="accent grow">▭ Standard tabs (centred at the bottom)</button></div>
-          <div class="hint">Sizes are remembered for your next projects. Tabs are part of the outside cut, which is cut last with your cut passes, after any holes.</div>
-          <div class="gbtns"><button id="tbReset">↺ Reset to standard</button><button id="tbDel">🗑 Remove all tabs</button><button id="tbDone" class="accent">✓ Done</button></div>
+          <div class="hint" id="tbKerfHint"></div>
+          <div class="row"><button id="tbStd" class="accent grow">▭ Standard tabs</button></div>
+          <div class="row"><button id="tbAddSlot" class="grow">▭ Add a slot</button><button id="tbRotSlot">↻ Turn slot 90°</button></div>
+          <div class="hint">Sizes are remembered for your next projects. Tabs are part of the outside cut (cut last). Slots are cut first, with any holes, using your cut settings.</div>
+          <div class="gbtns"><button id="tbReset">↺ Reset to defaults</button><button id="tbDel">🗑 Remove all tabs</button><button id="tbDone" class="accent">✓ Done</button></div>
         </div>
         <div id="hhBox" class="hhbox">
           <div class="hintbar" id="hhHint"></div>
@@ -205,6 +218,10 @@
     <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
       <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
       <div class="row"><label class="filebtn grow">📷 Turn a photo into a line drawing<input type="file" id="panelPhoto" accept="image/*" hidden></label></div>
+      <div class="row"><label class="filebtn grow">➕ Add another line drawing<input type="file" id="overlayLine" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <div class="row"><label class="filebtn grow">➕ Add another photo<input type="file" id="overlayPhoto" accept="image/*" hidden></label></div>
+      <label class="chk"><input type="checkbox" id="ovClip">Only keep the new lines that sit inside the grey outside cut</label>
+      <div class="hint">The new picture is placed on top as a group you can move, size, turn or flip, then tap ✓ Done. Undo takes it off. This does not start a new project.</div>
       <label class="chk"><input type="checkbox" id="showPhoto">Show the picture faintly behind the lines</label>
       <label class="rg"><span>How faint</span><input type="range" id="photoOp" min="5" max="80" step="5" value="25"><output id="photoOpOut">25%</output></label>
       <div class="hint">Only on this screen - the picture is never burnt or put in the laser files. The 🖼 Photo button on the drawing turns it on and off.</div>
