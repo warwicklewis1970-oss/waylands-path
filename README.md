@@ -39,6 +39,13 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a grey outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.5 - Cleaner tracing, and you can edit the outside cut
+- Bold black-and-white line art (thick outlined shapes, stars, moons, faces) keeps both edges of each stroke, plus eyes, smiles, rings, slots and holes.
+- The grey cut line follows the real outer outline of the piece. It is not a coarse blob, and a line is only omitted from the etching when it really is that same outer line.
+- The grey outside cut can be tapped and edited like any other line: Select (Delete line, Make cut / Make etch), Eraser, Break, Point to point, and Thickness (thickness applies once you Make etch). Deleting it leaves no outside cut, and it is not put back automatically (Undo brings it back; *Make outer cut line* makes a new one if you want one).
+- Clone: 👆 Tap one can copy the outside cut. A Lasso, Box or All does not include it.
+- Already-saved projects are unchanged if you do not edit the cut. A new import or a Retrace will produce different, more faithful lines. If you edit the cut, the cut file follows your new path, with the same cut settings and cut-last order.
+
 ## v5.4 - The lasso waits for you
 - In **Clone**, after drawing a **➰ Lasso** loop or a **⬚ Box** (or tapping **▣ All**), the area stays on screen with white squares round it. Nothing is picked or copied yet.
 - Drag a **corner square** to make the area bigger or smaller, a **side dot** to change just the width or height, or drag **inside** it to move it. The lines inside turn orange and the panel and the label over the area show how many are picked (for example "12 lines picked").

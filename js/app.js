@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.4';
+const APP_VERSION = 'v5.5';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -17,10 +17,10 @@ let sel = new Set(), act = new Set(), lastTap = null, pen = null, skip = { mode:
 const view = { s: 1, tx: 0, ty: 0 };
 const cv = $('stage'), ctx = cv.getContext('2d');
 const toast = (msg, ms = 2600) => { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, ms); };
-const snap = () => BZ.clone(S.paths);
+const snap = () => { const p = BZ.clone(S.paths); p._nac = S.noAutoCut || 0; return p; };
 function pushUndo() { undoSt.push(snap()); if (undoSt.length > 50) undoSt.shift(); redoSt = []; updUndo(); }
-function undo() { if (!undoSt.length) return; const cur = snap(), prev = undoSt.pop(); if (prev._w != null) { cur._w = S.widthMm; S.widthMm = prev._w; syncInputs(); } redoSt.push(cur); S.paths = prev; pen = null; clearSel(); changed(); if (window.T4) T4.reset(); if (window.CN) CN.afterUndo(); }
-function redo() { if (!redoSt.length) return; const cur = snap(), nxt = redoSt.pop(); if (nxt._w != null) { cur._w = S.widthMm; S.widthMm = nxt._w; syncInputs(); } undoSt.push(cur); S.paths = nxt; pen = null; clearSel(); changed(); if (window.T4) T4.reset(); if (window.CN) CN.afterUndo(); }
+function undo() { if (!undoSt.length) return; const cur = snap(), prev = undoSt.pop(); if (prev._w != null) { cur._w = S.widthMm; S.widthMm = prev._w; syncInputs(); } if (prev._nac != null) { cur._nac = S.noAutoCut || 0; S.noAutoCut = prev._nac; } redoSt.push(cur); S.paths = prev; pen = null; clearSel(); changed(); if (window.T4) T4.reset(); if (window.CN) CN.afterUndo(); }
+function redo() { if (!redoSt.length) return; const cur = snap(), nxt = redoSt.pop(); if (nxt._w != null) { cur._w = S.widthMm; S.widthMm = nxt._w; syncInputs(); } if (nxt._nac != null) { cur._nac = S.noAutoCut || 0; S.noAutoCut = nxt._nac; } undoSt.push(cur); S.paths = nxt; pen = null; clearSel(); changed(); if (window.T4) T4.reset(); if (window.CN) CN.afterUndo(); }
 function updUndo() { $('undoBtn').disabled = !undoSt.length; $('redoBtn').disabled = !redoSt.length; }
 const etch = () => S.paths.filter(p => !p.cut), cuts = () => S.paths.filter(p => p.cut);
 const bbAll = () => BZ.bbox(S.paths);
@@ -115,9 +115,13 @@ function cutInfo() { const el = $('cutInfo'); if (!el) return; const c = cuts(),
 const holeCount = () => innerCuts().filter(p => p.z).length;
 function innerCuts() { const c = cuts(); if (!c.length) return []; const ab = BZ.bbox(etch().concat(c)), A = ab ? ab.w * ab.h : 0, polys = c.map(p => BZ.flatten(p, 0.5));
   const dep = c.length > 1 ? LZ.cutDepths(polys) : [0]; return c.filter((p, i) => { const b = BZ.bbox([p]); return dep[i] > 0 || (b && b.w * b.h < A * 0.25); }); }
+const isOuterCut = p => p && p.cut && !p.hole && !innerCuts().includes(p);
+const hasOuterCut = () => cuts().some(isOuterCut);
+// v5.5: if they delete the outside cut, don't put it back on a retrace or a new auto-cut
+function noteCutGone() { if (!hasOuterCut()) S.noAutoCut = 1; }
 // Tightness 1-10: how far the outside cut may bridge across pockets (10 = follows every pocket, 1 = smooth outline)
 const bridgeMm = () => { const t = Math.max(1, Math.min(10, +S.cutTight || 8)); return Math.round((11 - t) * 0.5 * 100) / 100; };
-function makeCut(auto) { const e = etch(); if (!e.length) { toast('No lines to go around yet.'); return; } const keepIn = innerCuts(), outerOld = cuts().filter(p => !keepIn.includes(p)), all = e.concat(outerOld.map(p => p.tabBase ? { n: p.tabBase, z: true } : p), keepIn.filter(p => p.hole)), tabCfg = (outerOld.find(p => p.tabs && p.tabs.xs && p.tabs.xs.length) || {}).tabs, ab = BZ.bbox(all), k = kmm(), offU = S.cutOff / k, brU = bridgeMm() / k, lineU = S.lineMm / k, pad = offU + brU + lineU * 2 + 2 / k;
+function makeCut(auto) { if (!auto) S.noAutoCut = 0; const e = etch(); if (!e.length) { toast('No lines to go around yet.'); return; } const keepIn = innerCuts(), outerOld = cuts().filter(p => !keepIn.includes(p)), all = e.concat(outerOld.map(p => p.tabBase ? { n: p.tabBase, z: true } : p), keepIn.filter(p => p.hole)), tabCfg = (outerOld.find(p => p.tabs && p.tabs.xs && p.tabs.xs.length) || {}).tabs, ab = BZ.bbox(all), k = kmm(), offU = S.cutOff / k, brU = bridgeMm() / k, lineU = S.lineMm / k, pad = offU + brU + lineU * 2 + 2 / k;
   const s = 1100 / Math.max(ab.w + 2 * pad, ab.h + 2 * pad), w = Math.ceil((ab.w + 2 * pad) * s) + 2, h = Math.ceil((ab.h + 2 * pad) * s) + 2, ox = ab.x0 - pad, oy = ab.y0 - pad;
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.strokeStyle = '#000'; g.lineWidth = Math.max(1.5, lineU * s); g.lineCap = g.lineJoin = 'round'; g.beginPath();
   for (const p of all) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
@@ -145,13 +149,13 @@ let traceSeq = 0;
 async function retrace(record = true) { if (!srcImg) return; const seq = ++traceSeq; $('busy').textContent = 'Tracing…'; $('busy').hidden = false;
   let r; try { r = await runTrace(srcImg, S.trace); } catch (err) { r = { error: String(err && err.message || err) }; } if (seq !== traceSeq) return; $('busy').hidden = true;
   if (r.error) { toast('Tracing failed: ' + r.error, 4000); return; } if (record) pushUndo(); lw = r.lw || 0;
-  const keepUC = record ? S.paths.filter(p => p.cut && p.uc).map(p => BZ.clone(p)) : []; S.paths = r.paths; clearSel(); pen = null;
+  const keepUC = record ? S.paths.filter(p => p.cut && p.uc).map(p => BZ.clone(p)) : []; S.paths = r.paths; clearSel(); pen = null; if (S.noAutoCut) S.paths = S.paths.filter(p => !p.cut || p.uc || p.hole);
   if (keepUC.length) { for (const k of keepUC) { const kb = BZ.bbox([k]), m = S.paths.findIndex(q => !q.cut && q.z && (b => Math.abs(b.x0 - kb.x0) + Math.abs(b.y0 - kb.y0) + Math.abs(b.x1 - kb.x1) + Math.abs(b.y1 - kb.y1) < 4)(BZ.bbox([q]))); if (m >= 0) S.paths.splice(m, 1); S.paths.push(k); } toast(`Traced again - your ${keepUC.length} cut out${keepUC.length > 1 ? 's were' : ' was'} kept`, 3500); }
   const nc = r.paths.filter(p => p.cut).length;
   if (r.mode === 'photo') $('traceInfo').innerHTML = `Photo: ${r.paths.length} lines, ${r.nodes} points. Fewer lines: lower <b>Detail</b> or raise <b>Ignore small bits</b>. Wobbly: raise <b>Smoothness</b>. Then tidy up with Eraser, Clear space and Draw over the faint photo. No cut line is added for a photo - for a cut-out shape use <b>⬡ Add shape</b> (or Make cut in Size &amp; cut).`; else
   $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide. ${r.darkBg ? 'Auto: light shapes on a dark background (if that is wrong, tap <b>Dark lines on light paper</b>).' : r.mode === 'light' ? 'Light lines on dark.' : r.mode === 'normal' ? 'Dark lines on light paper.' : 'Auto: dark lines on light paper.'} ${nc ? 'Grey cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.solids ? ` ${r.solids} solid dark shape${r.solids > 1 ? 's' : ''} (windows, hinges…) traced round the edge.` : ''}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
   // photos: no automatic cut line (on a busy photo it would cut many small holes) - add a shape or Make cut by choice
-  photoBgUI(); changed(); if (S.trace.kind !== 'photo' && !cuts().some(p => !innerCuts().includes(p)) && etch().length) makeCut(true); }
+  photoBgUI(); changed(); if (!S.noAutoCut && S.trace.kind !== 'photo' && !hasOuterCut() && etch().length) makeCut(true); }
 function traceSoon() { clearTimeout(traceT); traceT = setTimeout(() => retrace(true), 160); }
 // ---------- opening files ----------
 async function openFile(file, kind = 'line') { if (!file) return; const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name), name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled';
@@ -219,7 +223,7 @@ const isEnd = (p, j) => !p.z && (j === 0 || j === p.n.length - 1);
 function hitNode(u, tolU, only) { let best = null, bd = tolU; const list = only ? [...only] : S.paths.map((_, i) => i);
   for (const pi of list) { const p = S.paths[pi]; if (!p) continue; p.n.forEach((nd, j) => { const d = Math.hypot(nd.x - u[0], nd.y - u[1]); if (d < bd) { bd = d; best = { pi, j }; } }); } return best; }
 function hitHandle(u, tolU) { let best = null, bd = tolU; for (const h of handleList()) { const q = S.paths[h.pi].n[h.j][h.side], d = Math.hypot(q[0] - u[0], q[1] - u[1]); if (d < bd) { bd = d; best = h; } } return best; }
-function hitPath(u, tolU, skipIdx = -1) { return hitPathF(u, tolU, skipIdx, p => !p.cut) || hitPathF(u, tolU * 0.6, skipIdx, p => p.cut); }
+function hitPath(u, tolU, skipIdx = -1) { const e = hitPathF(u, tolU, skipIdx, p => !p.cut), c = hitPathF(u, tolU, skipIdx, p => p.cut && !p.hole); if (e && c) return e.d <= c.d + 5 / view.s ? e : c; return e || c; }
 function hitPathF(u, tolU, skipIdx, filt) { let best = null; S.paths.forEach((p, pi) => { if (pi === skipIdx || !p.n.length || !filt(p)) return; const bb = BZ.bbox([p]); if (!bb || u[0] < bb.x0 - tolU || u[0] > bb.x1 + tolU || u[1] < bb.y0 - tolU || u[1] > bb.y1 + tolU) return;
     const r = BZ.nearest(p, u, Math.max(0.2, tolU / 6)); if (r && r.d <= tolU && (!best || r.d < best.d)) best = Object.assign(r, { pi }); }); return best; }
 const tolPx = e => (e && e.pointerType === 'mouse' ? 9 : 16) / view.s;
@@ -296,7 +300,7 @@ function straighten() { const segs = segsForAction(); if (!segs.length) { toast(
 // any line(s) -> cut (grey, own laser step) or back to etch
 function pickedLines() { const s = new Set(act); for (const k of sel) s.add(+k.split(':')[0]); return [...s].filter(pi => S.paths[pi]); }
 function toggleCut() { const pis = pickedLines(); if (!pis.length) { toast('Tap a line first (or drag a box round several), then Make cut'); return; }
-  const toCut = pis.some(pi => !S.paths[pi].cut); pushUndo(); for (const pi of pis) { if (toCut) { S.paths[pi].cut = true; S.paths[pi].uc = 1; } else { delete S.paths[pi].cut; delete S.paths[pi].uc; } }
+  const toCut = pis.some(pi => !S.paths[pi].cut); const wasOuter = !toCut && pis.some(pi => { const p = S.paths[pi]; return p && p.cut && !p.hole; }); pushUndo(); for (const pi of pis) { if (toCut) { S.paths[pi].cut = true; S.paths[pi].uc = 1; } else { delete S.paths[pi].cut; delete S.paths[pi].uc; delete S.paths[pi].tabs; delete S.paths[pi].tabBase; delete S.paths[pi]._tsig; } } if (wasOuter) noteCutGone();
   const open = toCut ? pis.filter(pi => !S.paths[pi].z).length : 0; if (toCut && !S.cutOn) { S.cutOn = true; syncInputs(); }
   changed({ keepSel: true }); updCutBtn();
   toast(toCut ? `${pis.length} line${pis.length > 1 ? 's' : ''} now cut${pis.length > 1 ? '' : 's'} (grey, in the cut file)${open ? ` - ${open} open line${open > 1 ? 's' : ''}: the ends don't meet, so it won't free a piece` : ''}` : `${pis.length} line${pis.length > 1 ? 's' : ''} back to etch`, open ? 5000 : 2600); }
@@ -307,10 +311,10 @@ function updSel() { const n = sel.size; $('selInfo').textContent = n ? `${n} poi
   document.querySelectorAll('[data-needsel]').forEach(b => { b.classList.toggle('dim', !n && !lastTap); }); updCutBtn(); }
 // ---------- Delete tool: tap a line, it goes up to the junctions either side ----------
 function isJunction(pi, j) { return linked(pi, j).length > 0; }
-function deleteStretch(h) { const p = S.paths[h.pi], m = BZ.nseg(p); if (delMode === 'whole') { pushUndo(); S.paths.splice(h.pi, 1); clearSel(); changed(); toast('Line deleted'); return; }
+function deleteStretch(h) { const p = S.paths[h.pi], m = BZ.nseg(p); if (delMode === 'whole') { pushUndo(); const wasOuter = p && p.cut && !p.hole; S.paths.splice(h.pi, 1); clearSel(); if (wasOuter) noteCutGone(); changed(); toast('Line deleted'); return; }
   const del = new Set([h.k]); let a = h.k; while (true) { if (!p.z && a === 0) break; if (isJunction(h.pi, a)) break; const pk = (a - 1 + m) % m; if (del.has(pk)) break; del.add(pk); a = pk; }
   let b = h.k; while (true) { const nj = (b + 1) % p.n.length; if (!p.z && nj === p.n.length - 1) break; if (isJunction(h.pi, nj)) break; const nk = (b + 1) % m; if (del.has(nk)) break; del.add(nk); b = nk; }
-  pushUndo(); replacePath(h.pi, keepSegs(p, del)); clearSel(); changed(); toast('Removed up to the junctions - Undo brings it back'); }
+  pushUndo(); const wasOuter = p && p.cut && !p.hole; replacePath(h.pi, keepSegs(p, del)); clearSel(); if (wasOuter) noteCutGone(); changed(); toast('Removed up to the junctions - Undo brings it back'); }
 // ---------- Skip over / Continue across ----------
 function skipOver(li, oi, tapU) { const L = S.paths[li], O = S.paths[oi]; const cs = BZ.pathCrossings(L, O); if (cs.length < 2) { toast('That line does not pass through the shape you tapped'); return false; }
   const poly = O.z ? BZ.flatten(O, 0.3) : null; let best = null;
@@ -580,7 +584,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: ➰ lasso stays on screen - resize it, see what is inside, then + Clone this area'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: cleaner line-art tracing, and you can edit or delete the grey outside cut'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -627,4 +631,4 @@ $('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromFor
 $('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
 setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
-window.WP = { photoLast, paint, get paintN() { return paintN; }, holeCount, innerCuts, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { photoLast, paint, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };

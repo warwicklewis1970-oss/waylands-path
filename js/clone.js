@@ -1,6 +1,6 @@
 // Waylands Path v5.4 - Clone tool (v5.4: a drawn Lasso / Box stays as an adjustable area - resize, move, live count - and nothing is
 // picked or copied until '+ Clone this area')
-// v5.3 - Clone tool (v5.3: Lasso / Box / Select all picks a whole group; optional trim at the lasso edge)
+// v5.5 - Clone tool (v5.5: 👆 Tap one can pick the grey outside cut; Lasso / Box / All still skip it)
 // v5.1 - Clone tool: tap a line, shape, cut out or hanging hole, Clone it, then size, turn and move the copy.
 // Every picked item keeps p.xf = { g, o, b, c, sx, sy, r, dx, dy, sig, copy } on its path(s):
 //   o = geometry when cloned (or when first changed here) - "Reset to original" goes back to it exactly
@@ -41,10 +41,10 @@ window.CN = (() => {
     let best = null; S.paths.forEach((p, pi) => { if (p.cut || p.n.length < 2) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t && (!best || r.d < best.d)) best = { pi, d: r.d }; });
     const etchR = () => { const c = window.T4 ? T4.chainOf(best.pi).list.map(i => S.paths[i]) : [S.paths[best.pi]]; const g = c[0].xf && c[0].xf.g; return { list: g ? S.paths.filter(q => q.xf && q.xf.g === g) : c }; };
     let edge = null; S.paths.forEach(p => { if (!p.cut || p.n.length < 2 || p.hole) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t * 0.7 && (!edge || r.d < edge.d)) edge = { p, d: r.d }; });
-    if (edge && (!best || edge.d < best.d)) return isOuter(edge.p) ? (best ? etchR() : { outer: true }) : { list: [edge.p] };
+    if (edge && (!best || edge.d < best.d - t * 0.15)) return { list: [edge.p] };
     let inside = null, ia = Infinity; for (const p of S.paths) { if (!p.cut || !p.z || p.hole || isOuter(p)) continue; const f = BZ.flatten(p, 0.5), b = BZ.bbox([p]); if (BZ.inside(f, u) && b.w * b.h < ia) { ia = b.w * b.h; inside = p; } }
     if (inside && (!best || best.d > t * 0.45)) return { list: [inside] }; // a tap inside a cut out picks it unless right on a line
-    if (best) return etchR(); if (edge) return { outer: true }; return null; }
+    if (best) return etchR(); if (edge) return { list: [edge.p] }; return null; }
   function choose(list, grp) { C.virt = null; C.area = null; C.grp = !!grp; C.sel = list.slice(); C.g = list[0] && list[0].xf ? list[0].xf.g : null; panel(); draw(); }
   // ---------- v5.3 area selection: Lasso (free loop), Box (rectangle), Select all ----------
   const clean = p => { const q = BZ.clone(Object.assign({}, p, { xf: undefined })); delete q.xf; delete q.tabs; delete q.tabBase; delete q._tsig; return q; };
@@ -70,7 +70,7 @@ window.CN = (() => {
     return out; }
   function counts(list) { let e = 0, c = 0, h = 0; for (const p of list) { if (p.hole) h++; else if (p.cut) c++; else e++; } const pl = (n, a, b) => n ? `${n} ${n === 1 ? a : b}` : '';
     return [pl(e, 'line', 'lines'), pl(c, 'cut out', 'cut outs'), pl(h, 'hole', 'holes')].filter(Boolean).join(', ') || 'nothing'; }
-  const OUTER_NOTE = 'The outside cut line is never included - it follows your design.';
+  const OUTER_NOTE = 'A Lasso, Box or All does not include the outside cut line - tap it with 👆 Tap one if you want a copy of it.';
   function pickArea(poly) { const lp = BZ.fromPoints(poly, true), pb = pbox(poly); let outerHit = false; const whole = [], pieces = []; let trimmed = 0;
     for (const p of S.paths) { if (!p.hole && p.n.length < 2) continue; if (!touches(p, poly, lp, pb)) continue; if (isOuter(p)) { outerHit = true; continue; }
       if (C.trim && !p.cut && !p.hole) { const r = trimPath(p, poly, lp); if (r.length !== 1 || JSON.stringify(r[0].n) !== JSON.stringify(p.n)) trimmed++; pieces.push(...r); } else whole.push(p); }
@@ -216,7 +216,7 @@ window.CN = (() => {
       if (g.moved && poly && poly.length >= 3) { const b = pbox(poly); if ((b.x1 - b.x0) * view.s >= 12 && (b.y1 - b.y0) * view.s >= 12) { setArea(poly); toast(`${areaText()}. Drag the squares to make the area bigger or smaller, drag inside to move it. Nothing is copied until you tap + Clone this area.`, 4500); return; } }
       draw(); if (g.moved) return; g.cn = 'tap'; }
     if (g.cn === 'tap') { if (g.moved) return; C.virt = null; const r = pick(g.u0, e);
-      if (r && r.outer) { C.sel = []; panel(); draw(); toast('The outside cut line can\'t be cloned or changed here - it follows your design. Rebuild it with Cut out › Outer cut.', 4500); return; }
+      if (r && r.outer) { C.sel = []; panel(); draw(); toast('A Lasso, Box or All does not include the outside cut line - tap it with 👆 Tap one if you want a copy of it.', 4500); return; }
       if (!r) { if (C.sel.length) { C.sel = []; panel(); draw(); } return; } choose(r.list); return; }
     if (!g.moved) { const r = pick(g.u0, e); if (r && r.list && !r.list.every(q => C.sel.includes(q))) choose(r.list); return; }
     undoSt.push(g.snap); if (undoSt.length > 50) undoSt.shift(); redoSt = []; changed({ keepSel: true }); panel(); draw(); }
@@ -231,8 +231,8 @@ window.CN = (() => {
     if (C.area) { areaPick(); const r = C.area.pk, n = C.area.list.length; $('cnAreaGo').disabled = !n; if ($('cnEdit')) $('cnEdit').hidden = true; { const rb = $('cnRecent'); if (rb) rb.hidden = true; }
       $('cnHint').innerHTML = `<b>${n ? areaText() : 'Nothing inside yet'}</b> (orange)${C.trim && r.trimmed ? `, ${r.trimmed} cut at the edge` : ''}. Drag the <b>squares</b> to make the area bigger or smaller, drag <b>inside</b> it to move it. Nothing is copied until you tap <b>+ Clone this area</b>.${r.outerHit ? ' ' + OUTER_NOTE : ''}`; return; }
     if (!list.length && C.virt && C.virt.length) { $('cnGo').disabled = false; $('cnHint').innerHTML = `<b>Picked:</b> ${counts(C.virt)} (lines trimmed at the edge; cut outs and holes stay whole). Tap <b>+ Clone</b> to copy it, then move, size and turn the copy.`; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
-    if (!list.length && C.mode !== 'tap') { $('cnHint').innerHTML = (C.mode === 'lasso' ? '<b>Lasso:</b> draw a loop round the part you want with one finger' : '<b>Box:</b> drag a box over the part you want with one finger') + '. It stays on screen so you can resize or move it and see what is inside' + (C.trim ? ' (lines are cut at the edge)' : ' (lines partly inside are taken whole)') + ' - nothing is copied until you tap <b>+ Clone this area</b>. Or tap <b>▣ All</b> for the whole design. Two fingers move or zoom the picture.' + (recents().length ? ' Or tap a <b>Recent clone</b> below.' : ''); ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
-    if (!list.length) { $('cnHint').innerHTML = '<b>Clone:</b> tap a line, shape, cut out or hanging hole to pick it, then tap <b>+ Clone</b>.' + (recents().length ? ' Or tap one of your <b>Recent clones</b> below to place it again.' : '') + ' Two fingers move or zoom the picture.'; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
+    if (!list.length && C.mode !== 'tap') { $('cnHint').innerHTML = (C.mode === 'lasso' ? '<b>Lasso:</b> draw a loop round the part you want with one finger' : '<b>Box:</b> drag a box over the part you want with one finger') + '. It stays on screen so you can resize or move it and see what is inside' + (C.trim ? ' (lines are cut at the edge)' : ' (lines partly inside are taken whole)') + ' - nothing is copied until you tap <b>+ Clone this area</b>. Or tap <b>▣ All</b> for the whole design. ' + OUTER_NOTE + ' Two fingers move or zoom the picture.' + (recents().length ? ' Or tap a <b>Recent clone</b> below.' : ''); ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
+    if (!list.length) { $('cnHint').innerHTML = '<b>Clone:</b> tap a line, shape, cut out, hanging hole or the grey outside cut to pick it, then tap <b>+ Clone</b>.' + (recents().length ? ' Or tap one of your <b>Recent clones</b> below to place it again.' : '') + ' Two fingers move or zoom the picture.'; ['cnW', 'cnH', 'cnPct', 'cnRot'].forEach(id => set(id, '')); return; }
     const k = kmm(), bb = bbOf(list, k), sx = xf ? xf.sx : 1, sy = xf ? xf.sy : 1, W = bb.w * Math.abs(sx) * k, H = bb.h * Math.abs(sy) * k;
     set('cnW', hole ? r3(list[0].hole.d) : f1(W)); set('cnH', hole ? r3(list[0].hole.d) : f1(H)); set('cnPct', Math.round(Math.abs(sx) * 1000) / 10); set('cnRot', xf ? xf.r : 0);
     $('cnHint').innerHTML = `<b>${isCopy ? 'Copy' : 'Picked'}:</b> ${describe(list)}. Drag it to move · drag <b>◢</b> to size${hole ? ' (holes stay round)' : ' · drag <b>⟳</b> to turn'}. Or type below.${isCopy ? '' : ' Tap <b>+ Clone</b> to copy it.'}${list.length > 1 && C.mode !== 'tap' && !isCopy ? ' Draw again to pick something else.' : ''}`; }

@@ -11,15 +11,18 @@ window.T4 = (() => {
   const d2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   let focus = null, flash = null; // flash = {p, until}: a new line glows blue for a moment
   const glow = p => { flash = { p, until: Date.now() + 1500 }; setTimeout(draw, 1550); }; // {pi, u}: line whose nearby points are shown
-  // ---------- hit testing (etch lines first, the cut never steals a tap) ----------
+  // ---------- hit testing (etch wins if you tap right on it; the grey outside cut is otherwise tappable like any line) ----------
+  const isEdit = p => p && !p.hole; // etch + cut lines (not hanging holes, which have their own tool)
   function hitLine(u, tolU, filt, skip = -1) { let best = null; S.paths.forEach((p, pi) => { if (pi === skip || !p.n.length || !filt(p)) return; const bb = BZ.bbox([p]);
       if (!bb || u[0] < bb.x0 - tolU || u[0] > bb.x1 + tolU || u[1] < bb.y0 - tolU || u[1] > bb.y1 + tolU) return;
       const r = BZ.nearest(p, u, Math.max(0.2, tolU / 6)); if (r && r.d <= tolU && (!best || r.d < best.d)) best = Object.assign(r, { pi }); }); return best; }
   function hitPt(u, tolU, filt, skip = -1) { let best = null, bd = tolU; S.paths.forEach((p, pi) => { if (pi === skip || !filt(p)) return; p.n.forEach((nd, j) => { const d = Math.hypot(nd.x - u[0], nd.y - u[1]); if (d < bd) { bd = d; best = { pi, j, pt: [nd.x, nd.y] }; } }); }); return best; }
   const hitEtch = (u, tolU, skip) => hitLine(u, tolU, isEtch, skip);
-  // snap a point to an etch point or line; returns {pt, pi, k, t} (pi/k/t when it landed inside a line)
-  function snapTo(u, tolU, skip = -1) { const n = hitPt(u, tolU * 0.7, isEtch, skip); if (n) return { pt: n.pt, node: n };
-    const h = hitEtch(u, tolU * 0.6, skip); if (h) return { pt: h.pt, line: h }; return { pt: u.slice() }; }
+  // prefer an etch line when both are under the finger, so the outside cut does not steal taps from the drawing
+  function hitAny(u, tolU, skip) { const e = hitLine(u, tolU, isEtch, skip), c = hitLine(u, tolU, isEdit, skip); if (e && c && e.pi !== c.pi) return e.d <= c.d + 5 / view.s ? e : c; return e || c; }
+  function hitPtAny(u, tolU, skip) { const e = hitPt(u, tolU, isEtch, skip), c = hitPt(u, tolU, isEdit, skip); if (e && c && e.pi !== c.pi) { const de = Math.hypot(e.pt[0] - u[0], e.pt[1] - u[1]), dc = Math.hypot(c.pt[0] - u[0], c.pt[1] - u[1]); return de <= dc + 5 / view.s ? e : c; } return e || c; }
+  function snapTo(u, tolU, skip = -1) { const n = hitPtAny(u, tolU * 0.7, skip); if (n) return { pt: n.pt, node: n };
+    const h = hitAny(u, tolU * 0.6, skip); if (h) return { pt: h.pt, line: h }; return { pt: u.slice() }; }
   // make the line pass exactly through a snapped point (adds a point there) so the lines join
   function attach(s) { if (!s.line) return; const p = S.paths[s.line.pi]; if (!p) return; if (s.line.t < 0.02 || s.line.t > 0.98) return; BZ.insertNode(p, s.line.k, s.line.t); }
   // ---------- generic clipping: cut a path where insideFn changes, drop the inside pieces ----------
@@ -51,8 +54,8 @@ window.T4 = (() => {
   function down(e, p, u, base) { const g = Object.assign(base, { t4: tool, kind: 't4' }), tolU = tolT(e);
     if (tool === 'sel') { g.kind = 'tap'; g.tx = view.tx; g.ty = view.ty; return g; } // drag = move the picture, tap = pick
     if (tool === 'p2p') { const ch = PP.pi >= 0 && S.paths[PP.pi] ? PP.pi : -1;
-      const n = hitPt(u, tolU * 0.7, isEtch); if (n && !(ch >= 0 && n.pi === ch && n.j === 0 && S.paths[ch].n.length > 2)) { g.node = n; g.snap = snap(); }
-      else { const h = hitEtch(u, tolU * 0.6); if (h) { g.seg = h; g.snap = snap(); } }
+      const n = hitPtAny(u, tolU * 0.7); if (n && !(ch >= 0 && n.pi === ch && n.j === 0 && S.paths[ch].n.length > 2)) { g.node = n; g.snap = snap(); }
+      else { const h = hitAny(u, tolU * 0.6); if (h) { g.seg = h; g.snap = snap(); } }
       focus = { pi: (g.node || g.seg || {}).pi, u }; draw(); return g; }
     if (tool === 'draw') { DR.pts = [u.slice()]; inkStart(p); return g; }
     if (tool === 'rub') { g.snap = snap(); g.last = u; RB.at = u; g.erased = 0; S.paths.forEach((q, i) => { q._rk = BZ.length(q) + i * 1e-6; }); draw(); return g; }
@@ -69,14 +72,14 @@ window.T4 = (() => {
       const dx = u[0] - g.lastU[0], dy = u[1] - g.lastU[1]; g.lastU = u; for (const m of g.moving) BZ.moveNode(m, dx, dy); draw(); return; }
     if (g.seg) { S.paths = BZ.clone(g.snap); BZ.bend(S.paths[g.seg.pi], g.seg.k, g.seg.t, u[0] - g.u0[0], u[1] - g.u0[1]); draw(); return; } }
   function up(g, e) { const u = g.u0, tolU = tolT(e);
-    if (g.t4 === 'rub') { RB.at = null; S.paths.forEach(q => { delete q._rk; }); if (g.snap) g.snap.forEach(q => { delete q._rk; }); if (g.moved) { if (g.erased) { undoSt.push(g.snap); redoSt = []; changed(); toast('Rubbed out - Undo brings it back'); } else draw(); return; }
-      const h = hitEtch(u, tolU); if (h) { deleteStretch(h); toast('Line removed up to the junctions - Undo brings it back'); } else { draw(); toast('Rub over lines to erase, or tap right on a line'); } return; }
+    if (g.t4 === 'rub') { RB.at = null; S.paths.forEach(q => { delete q._rk; }); if (g.snap) g.snap.forEach(q => { delete q._rk; }); if (g.moved) { if (g.erased) { undoSt.push(g.snap); redoSt = []; if (window.WP && WP.noteCutGone) WP.noteCutGone(); changed(); toast('Rubbed out - Undo brings it back'); } else draw(); return; }
+      const h = hitAny(u, tolU); if (h) { deleteStretch(h); toast('Line removed up to the junctions - Undo brings it back'); } else { draw(); toast('Rub over lines to erase, or tap right on a line'); } return; }
     if (g.t4 === 'sel') { if (!g.moved) { if (SL.mode === 'brk') selTapBreak(u, e); else selPick(u, e); } return; }
-    if ((g.node || g.seg) && g.moved) { undoSt.push(g.snap); redoSt = []; changed(); if (g.t4 === 'cutout') panel(); return; }
+    if ((g.node || g.seg) && g.moved) { const ep = S.paths[(g.node || g.seg).pi]; if (ep && (ep.tabs || ep.tabBase)) { delete ep.tabs; delete ep.tabBase; delete ep._tsig; toast('Tabs were taken off this outline so your change can stay - add them again in Tabs if you want them.', 4000); } undoSt.push(g.snap); redoSt = []; changed(); if (g.t4 === 'cutout') panel(); return; }
     if (g.t4 === 'p2p') { if (!g.moved) p2pTap(u, e); return; }
     if (g.t4 === 'draw') { finishDraw(e); return; }
     if (g.t4 === 'brk') { if (!g.moved) brkTap(u, e); return; }
-    if (g.t4 === 'thick') { if (!g.moved) { const h = hitEtch(u, tolU); TH.list = null; TH.pi = h ? h.pi : -1; focus = null; if (!h) toast('Tap right on a line'); panel(); draw(); } return; }
+    if (g.t4 === 'thick') { if (!g.moved) { const h = hitAny(u, tolU); TH.list = null; TH.pi = h ? h.pi : -1; focus = null; if (!h) toast('Tap right on a line'); else if (S.paths[h.pi] && S.paths[h.pi].cut) toast('Cut lines use the cut settings (power, speed, passes) - not etch thickness. Tap Make etch if you want a thick engraved line.'); panel(); draw(); } return; }
     if (g.t4 === 'cutout') { if (g.moved) return; const onLine = (g.seg || g.node) && (g.node || hitLine(u, 9 / view.s, isCut)); if (onLine) { CO.sel = (g.seg || g.node).pi; CO.region = null; panel(); draw(); return; } CO.sel = -1; findRegion(u); return; }
     if (g.t4 === 'clear') { if (g.cnode != null) { panel(); draw(); return; } if (g.moved) { clBox(); return; } if (CL.mode === 'poly') { CL.pts.push(u.slice()); panel(); draw(); } else clTap(u); return; } }
   // live ink: drawn straight onto a see-through layer above the picture (no full redraw while drawing); cleared on pen-up
@@ -100,16 +103,16 @@ window.T4 = (() => {
         if (!best) break; used.add(best.qi); merged = BZ.join(merged, 1, S.paths[best.qi], best.e, 0.05)[0]; }
       BZ.reverse(merged); }
     return { list: [...used], merged }; }
-  function selPick(u, e) { const tolU = tolT(e), h = hitLine(u, tolU, isEtch) || hitLine(u, tolU * 0.6, isCut); if (!h) { SL.list = []; SL.merged = null; panel(); draw(); return; }
+  function selPick(u, e) { const tolU = tolT(e), h = hitAny(u, tolU); if (!h) { SL.list = []; SL.merged = null; panel(); draw(); return; }
     const c = chainOf(h.pi); SL.list = c.list; SL.merged = c.merged; SL.mode = null; SL.a = SL.b = SL.plan = null; panel(); draw(); }
   function selTapBreak(u, e) { const m = SL.merged; if (!m) return; const r = BZ.nearest(m, u, 0.2); if (!r || r.d > 60 / view.s) { toast('Tap on the blue line'); return; }
     let pos = { k: r.k, t: r.t, pt: r.pt }; const sn = 14 / view.s; m.n.forEach((nd, j) => { if (Math.hypot(nd.x - r.pt[0], nd.y - r.pt[1]) < sn) { pos = j < m.n.length - 1 || m.z ? { k: j % BZ.nseg(m), t: 0, pt: [nd.x, nd.y] } : { k: BZ.nseg(m) - 1, t: 1, pt: [nd.x, nd.y] }; } });
     if (!SL.a || SL.b) { SL.a = pos; SL.b = null; SL.plan = null; } else { SL.b = pos; SL.plan = Math.hypot(SL.a.pt[0] - pos.pt[0], SL.a.pt[1] - pos.pt[1]) > 1e-6 ? delPlan(m, SL.a, SL.b) : null; if (!SL.plan) { SL.b = null; toast('Tap a different point'); } } panel(); draw(); }
   function selAct(a) { if (!SL.list.length) { toast('Tap a line first'); return; } const list = SL.list.map(i => S.paths[i]);
-    if (a === 'del') { pushUndo(); [...SL.list].sort((x, y) => y - x).forEach(i => S.paths.splice(i, 1)); const n = SL.list.length; SL.list = []; SL.merged = null; changed(); panel(); toast(`Line deleted${n > 1 ? ` (${n} joined pieces)` : ''} - Undo brings it back`); return; }
+    if (a === 'del') { pushUndo(); const wasOuter = SL.list.some(i => S.paths[i] && S.paths[i].cut && !S.paths[i].hole); [...SL.list].sort((x, y) => y - x).forEach(i => S.paths.splice(i, 1)); const n = SL.list.length; SL.list = []; SL.merged = null; if (wasOuter && window.WP && WP.noteCutGone) WP.noteCutGone(); changed(); panel(); toast(`Line deleted${n > 1 ? ` (${n} joined pieces)` : ''} - Undo brings it back`); return; }
     if (a === 'brk') { SL.mode = 'brk'; SL.a = SL.b = SL.plan = null; panel(); draw(); return; }
     if (a === 'thick') { const keep = SL.list.slice(); setTool('thick'); TH.pi = keep[0]; TH.list = keep; panel(); draw(); return; }
-    if (a === 'cut') { const toCut = !list.every(p => p.cut); pushUndo(); for (const p of list) { if (toCut) { p.cut = true; p.uc = 1; delete p.w; delete p.dbl; } else { delete p.cut; delete p.uc; } } if (toCut) { S.cutOn = true; if (typeof syncInputs === 'function') syncInputs(); }
+    if (a === 'cut') { const toCut = !list.every(p => p.cut); const wasOuter = !toCut && list.some(p => p.cut && !p.hole && p.uc !== 1); pushUndo(); for (const p of list) { if (toCut) { p.cut = true; p.uc = 1; delete p.w; delete p.dbl; } else { delete p.cut; delete p.uc; delete p.tabs; delete p.tabBase; delete p._tsig; } } if (toCut) { S.cutOn = true; if (typeof syncInputs === 'function') syncInputs(); } if (wasOuter && window.WP && WP.noteCutGone) WP.noteCutGone();
       const open = toCut && list.some(p => !p.z); changed(); const c = chainOf(SL.list[0]); SL.list = c.list; SL.merged = c.merged; panel(); toast(toCut ? `Now a cut line (grey)${open ? ' - its ends don\'t meet, so it won\'t free a piece' : ''}` : 'Now an etch line again', 3500); } }
   function selConfirm() { const pl = SL.plan; if (!pl) return; pushUndo(); const first = S.paths[SL.list[0]], props = {}; for (const k of ['cut', 'w', 'dbl']) if (first[k] != null) props[k] = first[k];
     [...SL.list].sort((x, y) => y - x).forEach(i => S.paths.splice(i, 1)); for (const q of pl.keep) S.paths.push(Object.assign(q, props, { n: q.n })); 
@@ -129,9 +132,9 @@ window.T4 = (() => {
     pushUndo(); if (!closed) { for (const end of [0, p.n.length - 1]) { const nd = p.n[end], s = snapTo([nd.x, nd.y], tolU); if (s.node || s.line) { BZ.moveNode(nd, s.pt[0] - nd.x, s.pt[1] - nd.y); attach(s); } } }
     S.paths.push(p); glow(p); changed(); toast(closed ? 'Closed shape drawn' : 'Line drawn'); }
   // ================= Break =================
-  function brkPick(u, tolU) { const n = hitPt(u, tolU * 0.7, isEtch); if (n) { const p = S.paths[n.pi]; if (!p.z && (n.j === 0 || n.j === p.n.length - 1)) return { pt: n.pt, pi: n.pi, end: true, k: n.j === 0 ? 0 : BZ.nseg(p) - 1, t: n.j === 0 ? 0 : 1 };
+  function brkPick(u, tolU) { const n = hitPtAny(u, tolU * 0.7); if (n) { const p = S.paths[n.pi]; if (!p.z && (n.j === 0 || n.j === p.n.length - 1)) return { pt: n.pt, pi: n.pi, end: true, k: n.j === 0 ? 0 : BZ.nseg(p) - 1, t: n.j === 0 ? 0 : 1 };
       const k = p.z || n.j < p.n.length - 1 ? n.j : n.j - 1, t = k === n.j ? 0 : 1; return { pt: n.pt, pi: n.pi, k, t }; }
-    const h = hitEtch(u, tolU * 0.8); if (h) return { pt: h.pt, pi: h.pi, k: h.k, t: h.t }; return { pt: u.slice(), free: true }; }
+    const h = hitAny(u, tolU * 0.8); if (h) return { pt: h.pt, pi: h.pi, k: h.k, t: h.t }; return { pt: u.slice(), free: true }; }
   // insert nodes for two positions on one path, return {q, j1, j2} with j1 < j2 (node indices)
   function twoNodes(p, a, b) { const q = BZ.clone(p); let A = { k: a.k, t: a.t }, B = { k: b.k, t: b.t }; if (A.k > B.k || (A.k === B.k && A.t > B.t)) [A, B] = [B, A];
     const nodeAt = (pos) => pos.t <= 1e-6 ? pos.k : pos.t >= 1 - 1e-6 ? (pos.k + 1) % q.n.length : -1;
@@ -152,7 +155,7 @@ window.T4 = (() => {
   function brkClear() { BR.a = BR.b = BR.plan = null; BR.list = BR.merged = null; }
   function brkTap(u, e) { const tolU = tolT(e);
     if (BR.mode === 'add') { const pk = brkPick(u, tolU); if (!BR.a || BR.b) { BR.a = pk; BR.b = null; BR.plan = null; } else { BR.b = pk; BR.plan = d2(BR.a.pt, pk.pt) > 1e-6 ? { kind: 'add', a: BR.a, b: pk } : null; if (!BR.plan) { BR.b = null; toast('Tap a different point'); } } panel(); draw(); return; }
-    if (!BR.a || BR.b) { brkClear(); BR.u1 = u; BR.tol1 = tolU; const h = hitLine(u, tolU, isEtch);
+    if (!BR.a || BR.b) { brkClear(); BR.u1 = u; BR.tol1 = tolU; const h = hitAny(u, tolU);
       if (!h) { BR.a = brkPick(u, tolU); BR.list = null; panel(); draw(); return; } // empty space: the two taps will add a line
       const c = chainOf(h.pi); BR.list = c.list; BR.merged = c.merged; BR.a = brkPos(c.merged, u); panel(); draw(); return; }
     // 1st tap off any line, or the 2nd tap not on the same line: join the two taps with a new line (as before)
@@ -165,22 +168,24 @@ window.T4 = (() => {
       const own = c.list.includes(BR.list[0]), tA = own ? t1 : Math.min(t1, (BR.a ? BR.a.d : 0) + 8 / view.s);
       if (!A || !B || A.d > tA || B.d > tolU * 1.5 || d2(A.pt, B.pt) < 1e-6) return; const sc = A.d + B.d + (own ? 0 : 1e-9); if (!best || sc < best.sc) best = { c, A, B, sc }; };
     tryChain({ list: BR.list, merged: BR.merged });
-    S.paths.forEach((p, pi) => { if (!isEtch(p) || p.n.length < 2 || BR.list.includes(pi)) return; const r1 = BZ.nearest(p, BR.u1, 0.3), r2 = BZ.nearest(p, u, 0.3); if (r1 && r2 && r1.d <= Math.min(t1, (BR.a ? BR.a.d : 0) + 8 / view.s) && r2.d <= tolU * 1.5) tryChain(chainOf(pi)); });
+    S.paths.forEach((p, pi) => { if (!isEdit(p) || p.n.length < 2 || BR.list.includes(pi)) return; const r1 = BZ.nearest(p, BR.u1, 0.3), r2 = BZ.nearest(p, u, 0.3); if (r1 && r2 && r1.d <= Math.min(t1, (BR.a ? BR.a.d : 0) + 8 / view.s) && r2.d <= tolU * 1.5) tryChain(chainOf(pi)); });
     if (!best) { const own = brkPos(BR.merged, u); if (own && own.d <= tolU * 1.5) { toast('Tap a different point'); return; } addPlan(); return; }
     BR.list = best.c.list; BR.merged = best.c.merged; BR.a = best.A; const pos = best.B;
     if (d2(BR.a.pt, pos.pt) < 1e-6) { toast('Tap a different point'); return; }
     BR.b = pos; BR.plan = delPlan(BR.merged, BR.a, BR.b); panel(); draw(); }
   function brkConfirm() { const pl = BR.plan; if (!pl) return; pushUndo();
     if (pl.kind === 'del') { const first = S.paths[BR.list[0]], props = {}; for (const k of ['cut', 'w', 'dbl']) if (first && first[k] != null) props[k] = first[k];
+      const wasTab = first && (first.tabs || first.tabBase), wasOuter = first && first.cut && !first.hole;
       [...BR.list].sort((x, y) => y - x).forEach(i => S.paths.splice(i, 1)); for (const q of pl.keep) S.paths.push(Object.assign(q, props, { n: q.n }));
-      toast('Section removed - the laser stays off across the gap. Undo puts it back.'); }
+      toast(wasTab ? 'Section removed, and tabs were taken off this outline so the change can stay. Undo puts it back.' : 'Section removed - the laser stays off across the gap. Undo puts it back.');
+      if (wasOuter && window.WP && WP.noteCutGone) WP.noteCutGone(); }
     else { const pts = [pl.a, pl.b]; // insert join points into lines (higher index first is not needed: insert does not reindex paths)
-      for (const s of pts) if (!s.free && !s.end && s.t > 1e-6 && s.t < 1 - 1e-6) { const p = S.paths[s.pi]; if (p) BZ.insertNode(p, s.k, s.t); }
+      for (const s of pts) if (!s.free && !s.end && s.t > 1e-6 && s.t < 1 - 1e-6) { const p = S.paths[s.pi]; if (p) { if (p.tabs || p.tabBase) { delete p.tabs; delete p.tabBase; delete p._tsig; } BZ.insertNode(p, s.k, s.t); } }
       const nl = BZ.fromPoints([pl.a.pt, pl.b.pt], false); S.paths.push(nl); glow(nl); toast('Line added'); }
     brkClear(); changed(); panel(); }
   // ================= Eraser =================
   function applyRub(a, b, g) { const r = RB.px / view.s, x0 = Math.min(a[0], b[0]) - r, x1 = Math.max(a[0], b[0]) + r, y0 = Math.min(a[1], b[1]) - r, y1 = Math.max(a[1], b[1]) + r;
-    const inBrush = q => BZ.segD(q, a, b)[0] <= r, step = Math.max(0.3, r / 5); let cand = S.paths.map((p, i) => i).filter(pi => !S.paths[pi].cut && !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1));
+    const inBrush = q => BZ.segD(q, a, b)[0] <= r, step = Math.max(0.3, r / 5); let cand = S.paths.map((p, i) => i).filter(pi => !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1));
     if (RB.mode === 'all') { const n = clipAll(cand, inBrush, step); if (n && g) g.erased += n; return; }
     // doubled lines only: shorter line loses the bit lying on top of another line
     // rank = the line's whole length when the rub started (pieces keep it), so the real line never loses out to a shorter copy
@@ -194,7 +199,8 @@ window.T4 = (() => {
   // ================= Thickness =================
   function setThick(list, w, dbl) { const lw = S.lineMm; for (const p of list) { if (w > lw + 1e-9) p.w = Math.round(w * 1000) / 1000; else delete p.w; if (dbl > 0) p.dbl = Math.round(dbl * 1000) / 1000; else delete p.dbl; } }
   function thickVals() { const w = +$('t4w').value || S.lineMm, on = $('t4dbl').checked, dd = Math.max(0.01, +$('t4dd').value || 0.5); return { w, dbl: on ? dd : 0 }; }
-  function applyThick(all) { const v = thickVals(); const list = all ? S.paths.filter(isEtch) : TH.list && TH.list.length ? TH.list.map(i => S.paths[i]).filter(isEtch) : (TH.pi >= 0 && isEtch(S.paths[TH.pi]) ? [S.paths[TH.pi]] : []);
+  function applyThick(all) { const v = thickVals(); const raw = all ? S.paths.filter(isEdit) : TH.list && TH.list.length ? TH.list.map(i => S.paths[i]).filter(Boolean) : (TH.pi >= 0 && S.paths[TH.pi] ? [S.paths[TH.pi]] : []);
+    const list = raw.filter(isEtch); if (raw.some(p => p.cut) && !list.length) { toast('Cut lines use the cut settings, not etch thickness. Tap Make etch first if you want a thick engraved line.'); return; }
     if (!list.length) { toast(all ? 'No lines yet' : 'Tap a line first'); return; } pushUndo(); setThick(list, v.w, v.dbl); changed(); panel();
     if (all) toast(`All ${list.length} lines: ${describe(list[0])}`); }
   function describe(p) { const lw = S.lineMm, o = LZ.widthOffs(p, lw); if (!o) return `normal (one ${lw} mm pass)`; return `${p.w ? `${p.w} mm thick` : 'normal width'}${p.dbl ? `, double line ${p.dbl} mm apart` : ''} = ${o.length} passes`; }
@@ -232,7 +238,7 @@ window.T4 = (() => {
     if (r.match >= 0) { S.paths[r.match].cut = true; delete S.paths[r.match].w; delete S.paths[r.match].dbl; pi = r.match; }
     else { const px = 1 / view.s, p = BZ.fromPolyline(r.loop, { closed: true, tol: Math.max(0.4, 0.8 * px), arm: 4 * px, corner: 40 }); if (!p) { undoSt.pop(); updUndo(); toast('Could not make that cut'); return; } p.cut = true; S.paths.push(p); pi = S.paths.length - 1; }
     S.paths[pi].uc = 1; S.cutOn = true; CO.region = null; CO.sel = -1; changed(); panel(); const nh = WP.holeCount(); toast(`Cut out made (${nh} cut out${nh === 1 ? '' : 's'} now, shaded grey). Tap another area to add more.`, 3500); }
-  function makeEtch() { const p = S.paths[CO.sel]; if (!isCut(p)) return; pushUndo(); delete p.cut; delete p.uc; CO.sel = -1; changed(); panel(); toast('That line is an etch line again'); }
+  function makeEtch() { const p = S.paths[CO.sel]; if (!isCut(p)) return; pushUndo(); const wasOuter = !p.hole && p.uc !== 1; delete p.cut; delete p.uc; delete p.tabs; delete p.tabBase; delete p._tsig; CO.sel = -1; if (wasOuter && window.WP && WP.noteCutGone) WP.noteCutGone(); changed(); panel(); toast('That line is an etch line again'); }
   // ================= Clear space =================
   // Clear space: tap areas (shaded), drag a box, or (advanced) tap points round a polygon. Clear removes every etch line inside, cut exactly at the edge.
   const polyBB = poly => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const q of poly) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); } return { x0, y0, x1, y1 }; };
@@ -265,7 +271,7 @@ window.T4 = (() => {
       document.querySelectorAll('#t4slActs button').forEach(b => { b.disabled = !has; });
       const allCut = has && SL.list.every(i => S.paths[i] && S.paths[i].cut); $('t4slCut').innerHTML = allCut ? '▭ Make etch' : '▭ Make cut';
       const len = SL.merged ? (BZ.length(SL.merged) * kmm()).toFixed(1) : 0;
-      set('t4slHint', !has ? 'Tap a line to pick the whole line. Drag to move the picture.' : !brk ? `Whole line picked (blue, ${len} mm${SL.list.length > 1 ? `, ${SL.list.length} joined pieces` : ''}). What do you want to do?` :
+      set('t4slHint', !has ? 'Tap a line to pick it (including the grey outside cut). Drag to move the picture.' : !brk ? `Whole line picked (blue, ${len} mm${SL.list.length > 1 ? `, ${SL.list.length} joined pieces` : ''}${allCut ? ', cut line' : ''}). What do you want to do?` :
         !SL.a ? '<b>Break:</b> tap where the line should <b>STOP</b> (it snaps onto the blue line).' : !SL.b ? 'Now tap where the line <b>STARTS AGAIN</b>.' : '<b style="color:#e03131">Red dashes</b> = the gap (laser off). Tap Confirm.');
       $('t4slOk').disabled = !SL.plan; }
     if (tool === 'p2p') { $('t4ppDone').disabled = !(PP.live && PP.pi >= 0); set('t4ppHint', PP.live ? `Drawing: ${S.paths[PP.pi] ? S.paths[PP.pi].n.length : 0} point(s). Tap the next point, tap the first point to close, or Done.` : HINT.p2p); }

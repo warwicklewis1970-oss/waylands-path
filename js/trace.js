@@ -1,4 +1,6 @@
-// Waylands Path v3 - line-drawing tracer (own code, no libraries). Line drawings only (AI line art, logos, colouring-page style).
+// Waylands Path v5.5 - line-drawing tracer (own code, no libraries). Line drawings only (AI line art, logos, colouring-page style).
+// v5.5: keep both edges of thick outlined strokes, keep small face features (eyes, smiles, rings), and don't throw the
+// inner lines away just because they sit near the outside cut. The cut follows the real outer outline, not a coarse blob.
 // ink -> design area (grey edge = the cut line around everything) -> one clean centre line per drawn line (thinning) ->
 // a proper line graph: junctions meet at one shared node, spurs/specks removed, small gaps closed, lines along the edge merged into
 // the cut -> chained through junctions so a line carries on straight past a crossing -> Bezier paths with nodes only at
@@ -194,7 +196,7 @@ const T = (() => {
       if (deg[e.a] >= 3 && e.pts.length > 4) e.pts = cutEnd(false); if (deg[e.b] >= 3 && e.pts.length > 4) e.pts = cutEnd(true); } }
   function prune(g, spur, speck) { for (let it = 0; it < 4; it++) { const deg = degrees(g); let any = false;
       for (const e of g.edges) { const L = plen(e.pts), ea = deg[e.a] === 1, eb = deg[e.b] === 1;
-        if (e.a !== e.b && ((ea && !eb) || (!ea && eb)) && L < spur) { e.dead = true; any = true; } else if (ea && eb && L < speck) { e.dead = true; any = true; } else if (e.a === e.b && L < speck) { e.dead = true; any = true; } }
+        if (e.a !== e.b && ((ea && !eb) || (!ea && eb)) && L < spur) { e.dead = true; any = true; } else if (e.a !== e.b && ea && eb && L < speck) { e.dead = true; any = true; } else if (e.a === e.b && L < Math.max(8, spur * 0.35)) { e.dead = true; any = true; } } // v5.5: a small closed loop is an eye, a ring or a hole - not dirt
       compact(g); mergeDeg2(g); if (!any) break; } }
   function collapseClose(g, r) { const deg = degrees(g);
     for (const e of g.edges) { if (e.dead || e.a === e.b || deg[e.a] < 3 || deg[e.b] < 3 || plen(e.pts) > r) continue; const A = g.nodes[e.a], B = g.nodes[e.b], x = (A.x + B.x) / 2, y = (A.y + B.y) / 2;
@@ -342,9 +344,19 @@ const T = (() => {
     for (const k of [1.5, 2.5, 4]) { if (parts <= 1) break; const c = fillHoles(close(region, w, h, lw * k), w, h); const n = comps(c, w, h, minArea).big; if (n < parts) { region = c; parts = keepBig(region, w, h, minArea); } }
     // ink inside the design -> centre lines
     const L = new Uint8Array(N); for (let i = 0; i < N; i++) L[i] = dark[i] && region[i] ? 1 : 0;
-    removeSpecks(L, w, h, Math.max(6, lw * lw * (0.3 + detail * 0.08))); fillSmallHoles(L, w, h, Math.max(4, lw * lw * 0.5));
+    // v5.5: only drop real pin-prick dirt. lw² was wiping eyes, smiles, rings and the little circles by a slot.
+    removeSpecks(L, w, h, Math.max(8, Math.min(20, lw * 0.85))); fillSmallHoles(L, w, h, Math.max(3, Math.min(12, lw * lw * 0.08)));
     const lf = new Float32Array(N); for (let i = 0; i < N; i++) lf[i] = L[i]; const lb = blur(lf, w, h, Math.max(0.7, lw * 0.18)); for (let i = 0; i < N; i++) L[i] = lb[i] > 0.5 || (L[i] && lb[i] > 0.22) ? 1 : 0;
     const dbg = opts.debug ? { w, h, dark: dark.slice(), region: region.slice(), ink: L.slice() } : null;
+    // v5.5: solid dots (eyes, pupils, the little circles by a slot) thin to a point and vanish - keep them as small outlines
+    const dotLoops = []; { const seen = new Uint8Array(N), st = new Int32Array(N), maxA = Math.max(20, lw * lw * 1.4), minA = 12;
+      for (let i = 0; i < N; i++) { if (!L[i] || seen[i]) continue; let top = 0, n = 0, x0 = w, y0 = h, x1 = 0, y1 = 0; st[top++] = i; seen[i] = 1; const comp = [];
+        while (top) { const p = st[--top]; comp.push(p); n++; const x = p % w, y = (p / w) | 0; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const q = yy * w + xx; if (L[q] && !seen[q]) { seen[q] = 1; st[top++] = q; } } }
+        const bw = x1 - x0 + 1, bh = y1 - y0 + 1; if (n < minA || n > maxA || n < bw * bh * 0.5 || Math.max(bw, bh) > Math.max(lw * 3.2, 14) || Math.min(bw, bh) < 3 || Math.max(bw, bh) > Math.min(bw, bh) * 2.6) continue;
+        const dm = new Uint8Array(N); for (const p of comp) dm[p] = 1; const ff = new Float32Array(N); for (let k = 0; k < N; k++) ff[k] = dm[k] ? 0 : 1;
+        const ls = contoursIso(blur(ff, w, h, 0.6), w, h, 0.5).filter(l => Math.abs(area(l)) > 3); if (!ls.length) continue;
+        for (const l of ls) dotLoops.push(l); for (const p of comp) L[p] = 0; } }
     const L0 = L.slice(); thin(L, w, h); tidySkeleton(L, w, h);
     // typical width of the main lines (the thin-line width above can come from fine detail lines)
     const dIn = edt(inv(L0), w, h); { const ws = []; for (let i = 0; i < N; i++) if (L[i]) ws.push(2 * Math.sqrt(dIn[i])); ws.sort((a, b) => a - b); if (ws.length > 50) lw = clamp(Math.max(lw, ws[Math.floor(ws.length * 0.5)]), 1.5, 80); }
@@ -366,10 +378,10 @@ const T = (() => {
     // lines lying along the cut are the cut: drop them, then loose ends near the cut reach it exactly
     const cutPts = []; for (const l of loops) for (let i = 1; i < l.length; i++) { const a = l[i - 1], b = l[i], n = Math.ceil(D(a, b)); for (let k = 0; k < n; k++) cutPts.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); }
     const dc = cutPts.length ? edtPts(cutPts, w, h) : null, dcut = q => { if (!dc) return 1e9; const x = clamp(Math.floor(q[0]), 0, w - 1), y = clamp(Math.floor(q[1]), 0, h - 1); return Math.sqrt(dc[y * w + x]); };
-    if (dc) { const near = lw * 0.8, keep = [];
+    if (dc) { const near = Math.min(3.5, Math.max(1.6, lw * 0.22)), keep = []; // v5.5: only the line that IS the cut, not the inner edge of a thick outline
       for (const e of gr.edges) { let run = []; const pieces = []; for (const q of e.pts) { if (dcut(q) >= near) run.push(q); else { if (run.length) pieces.push(run); run = []; } } if (run.length) pieces.push(run);
         if (pieces.length === 1 && pieces[0].length === e.pts.length) { keep.push(e); continue; }
-        for (const pc of pieces) { if (plen(pc) < lw) continue; const a = pc[0] === e.pts[0] ? e.a : gr.nodes.push({ x: pc[0][0], y: pc[0][1] }) - 1, lst = pc[pc.length - 1], b = lst === e.pts[e.pts.length - 1] ? e.b : gr.nodes.push({ x: lst[0], y: lst[1] }) - 1; keep.push({ a, b, pts: pc }); } }
+        for (const pc of pieces) { if (plen(pc) < Math.max(2.5, lw * 0.2)) continue; const a = pc[0] === e.pts[0] ? e.a : gr.nodes.push({ x: pc[0][0], y: pc[0][1] }) - 1, lst = pc[pc.length - 1], b = lst === e.pts[e.pts.length - 1] ? e.b : gr.nodes.push({ x: lst[0], y: lst[1] }) - 1; keep.push({ a, b, pts: pc }); } }
       gr.edges = keep; stage('nearcut'); mergeDeg2(gr); prune(gr, spur, speck); stage('prune2'); }
     let gaps = closeGaps(gr, lw * (1.5 + detail * 0.15), arm); mergeDeg2(gr);
     if (inkAt) { gaps += closeGaps(gr, lw * 5, arm, (a, b) => { const v = inkAlong(a, b); if (dbg) (dbg.ev = dbg.ev || []).push([a.map(Math.round), b.map(Math.round), +v.toFixed(2)]); return v > 0.8; }); mergeDeg2(gr); }
@@ -385,13 +397,13 @@ const T = (() => {
         if (!best && dfat(q) < 1.5) best = { c: q, same: 1 };
         if (best) { const c = best.c.slice(); if (!best.same) { if (end) e.pts.push(c); else e.pts.unshift(c); } setNode(gr, n, c[0], c[1]); gr.nodes[n].onCut = true; } } }
     stage('ext'); prune(gr, spur, speck); stage('prune3'); centreJunctions(gr, lw); straightenJunctions(gr, lw * 0.9); stage('final');
-    const corner = 62 - cornerS * 5, tol = Math.max(0.7, lw * 0.22), opt = { tol, lineTol: Math.max(0.8, lw * 0.25), arm, corner, smooth: arm * 0.5, minStraight: Math.max(lw * 2.5, arm * 4) };
+    const corner = 50 - cornerS * 3.6, tol = Math.max(0.55, Math.min(1.7, lw * 0.07 + (10 - detail) * 0.05)), opt = { tol, lineTol: Math.max(0.6, Math.min(1.9, tol * 1.2)), arm, corner, smooth: Math.min(arm * 0.35, 2.8), minStraight: Math.max(lw * 1.6, arm * 2.5) }; // v5.5: thick lines must not coarsen stars and faces
     const paths = [];
     for (const c of chains(gr, arm, 38)) { if (plen(c.pts) < lw * 0.8) continue; const p = BZ.fromPolyline(c.pts, Object.assign({}, opt, { closed: c.closed, forced: c.forced })); if (!p) continue;
       if (c.forced.length) { const fk = new Set(c.forced.map(q => q[0].toFixed(3) + ',' + q[1].toFixed(3))); for (const nd of p.n) if (fk.has(nd.x.toFixed(3) + ',' + nd.y.toFixed(3))) { nd.keep = true; nd.s = 0; } }
       paths.push(p); }
-    for (const l of fatLoops) { const p = BZ.fromPolyline(l, Object.assign({}, opt, { closed: true, corner: corner + 5 })); if (p) { p.solid = true; paths.push(p); } }
-    const cuts = loops.slice(0, opts.allCuts ? loops.length : 1).map(l => { const p = BZ.fromPolyline(l, Object.assign({}, opt, { closed: true, tol: Math.max(0.8, lw * 0.25), lineTol: Math.max(0.9, lw * 0.3), corner: corner + 5 })); if (p) p.cut = true; return p; }).filter(Boolean);
+    for (const l of fatLoops.concat(dotLoops)) { const p = BZ.fromPolyline(l, Object.assign({}, opt, { closed: true, corner: corner + (l && fatLoops.includes(l) ? 5 : -4) })); if (p) { if (fatLoops.includes(l)) p.solid = true; paths.push(p); } }
+    const cuts = loops.slice(0, opts.allCuts ? loops.length : 1).map(l => { const p = BZ.fromPolyline(l, Object.assign({}, opt, { closed: true, tol: Math.max(0.5, Math.min(1.5, tol)), lineTol: Math.max(0.6, Math.min(1.7, tol * 1.15)), corner: corner })); if (p) p.cut = true; return p; }).filter(Boolean);
     if (unhook(paths.concat(cuts), lw)) { const used = new Set(); for (const p of paths.concat(cuts)) for (const nd of [p.n[0], p.n[p.n.length - 1]]) used.add(nd.x.toFixed(4) + ',' + nd.y.toFixed(4));
       for (const p of paths) { for (const nd of p.n) if (used.has(nd.x.toFixed(4) + ',' + nd.y.toFixed(4))) nd.keep = true; BZ.mergeCollinear(p, 0.5); } }
     alignThrough(paths, 10, 6); if (opts.straighten !== false) snapHV(paths.concat(cuts), 3.5, lw * 2); settleEnds(paths.concat(cuts), lw * 0.45); if (opts.straighten !== false) snapHV(paths.concat(cuts), 3.5, lw * 2);
