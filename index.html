@@ -50,6 +50,7 @@
   <section id="stageWrap">
     <canvas id="stage" aria-label="Design"></canvas><canvas id="ink" aria-hidden="true"></canvas>
     <div id="stats" class="stats"></div>
+    <div id="modeBanner" class="modebanner" hidden></div>
     <div id="cutLegend" class="cutleg" hidden><b class="cut">Red = CUT through</b> · <b class="etch">Black = ETCH</b></div>
     <div id="busy" class="busy" hidden>Tracing…</div>
     <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml,.json,.wayland.json" hidden></label></div>
@@ -68,11 +69,11 @@
       <button data-tool="clone" class="tool" title="Clone: copy a line, shape, hole or a whole group (lasso / box), then size, turn and move it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.25"/></svg><span>Clone</span></button>
       <button data-tool="edge" class="tool" title="Trace edge: draw a line alongside another, at a distance you set"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5 C8 4.5, 16 4.5, 20.5 17.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M5.2 19.2 C9 8.2, 15 8.2, 18.8 19.2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="2.4 2"/></svg><span>Trace edge</span></button>
     </div>
-    <div id="editBar" class="editbar" hidden>
+    <div id="editBar" class="editbar">
       <span class="editlbl">Editing:</span>
-      <div class="seg kindseg" id="editKind" role="tablist" aria-label="Editing ETCH lines or CUT lines">
-        <button type="button" data-edit="etch" class="on">ETCH lines</button>
-        <button type="button" data-edit="cut">CUT lines</button>
+      <div class="seg kindseg modepill" id="editKind" role="group" aria-label="Editing ETCH lines or CUT lines">
+        <button type="button" data-edit="etch" class="on" aria-pressed="true">ETCH lines</button>
+        <button type="button" data-edit="cut" aria-pressed="false">CUT lines</button>
       </div>
     </div>
     <div id="toolOpts">

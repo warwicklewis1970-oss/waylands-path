@@ -224,7 +224,7 @@ window.T4 = (() => {
       if (wasOuter && window.WP && WP.noteCutGone) WP.noteCutGone(); }
     else { const pts = [pl.a, pl.b]; // insert join points into lines (higher index first is not needed: insert does not reindex paths)
       for (const s of pts) if (!s.free && !s.end && s.t > 1e-6 && s.t < 1 - 1e-6) { const p = S.paths[s.pi]; if (p) { if (p.tabs || p.tabBase) { delete p.tabs; delete p.tabBase; delete p._tsig; } BZ.insertNode(p, s.k, s.t); } }
-      const nl = BZ.fromPoints([pl.a.pt, pl.b.pt], false); S.paths.push(nl); glow(nl); toast('Line added'); }
+      const nl = BZ.fromPoints([pl.a.pt, pl.b.pt], false); markInk(nl); S.paths.push(nl); glow(nl); toast(nl.cut ? 'Cut line added (red)' : 'Line added'); }
     brkClear(); changed(); panel(); }
   // ================= Eraser =================
   function applyRub(a, b, g) { const r = RB.px / view.s, x0 = Math.min(a[0], b[0]) - r, x1 = Math.max(a[0], b[0]) + r, y0 = Math.min(a[1], b[1]) - r, y1 = Math.max(a[1], b[1]) + r;
@@ -485,7 +485,7 @@ window.T4 = (() => {
   function doClear() { const regs = clRegions(); if (!regs.length) { toast(CL.mode === 'poly' ? 'Tap at least 3 points round the area' : 'Tap inside an area first (or drag a box)'); return; }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of regs) { const p = r.kind === 'face' ? r.g : 0; x0 = Math.min(x0, r.bb.x0 - p); y0 = Math.min(y0, r.bb.y0 - p); x1 = Math.max(x1, r.bb.x1 + p); y1 = Math.max(y1, r.bb.y1 + p); }
     const G = grid(), faces = regs.filter(r => r.kind === 'face' && G && r.sig === G.sig), geo = regs.filter(r => r.kind !== 'face'); if (faces.length < regs.filter(r => r.kind === 'face').length) { CL.regs = geo; panel(); draw(); toast('The lines changed - tap the areas again'); return; }
-    const inside = q => geo.some(r => inReg(r, q)) || (faces.length > 0 && inFaces(faces, G, q)), snap0 = snap(), list = S.paths.map((p, i) => i).filter(pi => isEtch(S.paths[pi]) && !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1)), n = clipAll(list, inside, Math.max(0.25, 1.2 / view.s), faces.length ? 2.5 / G.s : 0.3);
+    const inside = q => geo.some(r => inReg(r, q)) || (faces.length > 0 && inFaces(faces, G, q)), snap0 = snap(), list = S.paths.map((p, i) => i).filter(pi => layerOf(S.paths[pi]) && !S.paths[pi].hole && nearBox(pi, x0, y0, x1, y1)), n = (list.forEach(pi => releaseHardware(S.paths[pi], { silent: true })), clipAll(list, inside, Math.max(0.25, 1.2 / view.s), faces.length ? 2.5 / G.s : 0.3));
     if (!n) { toast(CL.grow ? 'No lines in that area' : 'No lines inside that area - tick "Include border lines" to remove its outline too', 4500); return; } undoSt.push(snap0); redoSt = []; CL.regs = []; CL.pts = []; changed(); panel(); toast(`Cleared - ${n} line${n > 1 ? 's' : ''} removed or trimmed at the edge. Undo brings them back.`, 3500); }
   // ================= panel & paint =================
   const HINT = { p2p: 'Tap, tap, tap: straight lines point to point (they snap onto the same kind of line). Drag a line to bend it, drag a dot to move it. Double-tap or Done to finish.',

@@ -162,7 +162,7 @@ window.T2 = (() => {
     document.querySelectorAll('[data-shtrim]').forEach(b => b.onclick = () => { const k = b.dataset.shtrim; SH.trim.on = true; SH.trim.pos = 0; if (k === 'bottom') { SH.trim.ang = 0; SH.trim.keep = 1; } else if (k === 'top') { SH.trim.ang = 0; SH.trim.keep = -1; } else if (k === 'left') { SH.trim.ang = 90; SH.trim.keep = 1; } else { SH.trim.ang = 90; SH.trim.keep = -1; } shUI(); draw(); });
     $$('shAng').oninput = () => { SH.trim.ang = +$$('shAng').value; shUI(); draw(); }; $$('shPos').oninput = () => { SH.trim.pos = +$$('shPos').value; shUI(); draw(); };
     $$('shFlip').onclick = () => { SH.trim.keep = -SH.trim.keep; shUI(); draw(); };
-    $$('shOpen').onchange = () => { SH.open = $$('shOpen').checked; draw(); }; $$('shCut').onchange = () => { SH.asCut = $$('shCut').checked; draw(); };
+    $$('shOpen').onchange = () => { SH.open = $$('shOpen').checked; draw(); }; $$('shCut').onchange = () => { SH.asCut = $$('shCut').checked; if (window.WP && WP.setEditKind) WP.setEditKind(SH.asCut ? 'cut' : 'etch', { silent: true, keepTool: true }); draw(); };
     $$('shDone').onclick = shDone; $$('shCancel').onclick = () => { SH.cur = null; shUI(); draw(); };
     lnUI(); shUI(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();

@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.10';
+const APP_VERSION = 'v5.11';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -13,9 +13,8 @@ const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detai
   widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, photoOp: 25, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
 function SHEET0() { return { on: false, W: 200, H: 200, margin: 5, gap: 5, nx: 1, ny: 1, place: 'centre' }; }
 let S = DEFAULTS(), srcImg = null, srcEl = null, undoSt = [], redoSt = [], tool = 'move';
-const EDIT_TOOLS = ['sel', 'p2p', 'draw', 'brk', 'rub', 'clone', 'edge'];
-let editKind = 'etch';
-try { const v = localStorage.getItem('wp-editKind'); if (v === 'cut' || v === 'etch') editKind = v; } catch (e) {}
+const EDIT_TOOLS = ['sel', 'p2p', 'draw', 'brk', 'rub', 'clone', 'edge', 'shapes', 'thick', 'clear', 'cutout'];
+let editKind = 'etch'; // always starts on ETCH; the big ETCH | CUT switch (or the Cut out button) changes it
 const inLayer = p => !!p && (editKind === 'cut' ? !!p.cut : !p.cut);
 let sel = new Set(), act = new Set(), lastTap = null, pen = null, skip = { mode: 'skip', first: -1 }, delMode = 'stretch', lw = 0;
 const view = { s: 1, tx: 0, ty: 0 };
@@ -79,18 +78,24 @@ function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.widt
   ctx.lineCap = ctx.lineJoin = 'round';
   // red edge = the cut line (dashed when cutting is switched off). Colour is on screen only - G-code and export SVG stay the same.
   // When Editing CUT or ETCH, the other layer is faded so you only work on one kind of line.
-  const fadeCut = editKind !== 'cut', fadeEtch = editKind === 'cut';
+  // CUT mode: red lines glow and etch lines fade. ETCH mode: cut lines stay normal red unless an edit tool is open (then they fade and lock).
+  const cutMode = editKind === 'cut', fadeCut = !cutMode && EDIT_TOOLS.includes(tool), fadeEtch = cutMode;
   { const czAll = S.paths.filter(q => q.cut);
-    if (czAll.length) { ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.globalAlpha = fadeCut ? 0.28 : 1; ctx.strokeStyle = S.cutOn ? 'rgba(224,49,49,0.32)' : 'rgba(224,49,49,0.18)'; ctx.lineWidth = 6.4 * px; ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke();
-      ctx.strokeStyle = S.cutOn ? '#e03131' : 'rgba(224,49,49,0.55)'; ctx.lineWidth = 2.3 * px; ctx.setLineDash(S.cutOn ? [] : [8 * px, 6 * px]); ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }
+    if (czAll.length) { ctx.save(); ctx.lineCap = ctx.lineJoin = 'round';
+      if (cutMode) { ctx.globalAlpha = 0.28; ctx.strokeStyle = '#ff2b2b'; ctx.lineWidth = 13 * px; ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke(); }
+      ctx.globalAlpha = fadeCut ? 0.28 : 1; ctx.strokeStyle = S.cutOn ? 'rgba(224,49,49,0.32)' : 'rgba(224,49,49,0.18)'; ctx.lineWidth = (cutMode ? 8 : 6.4) * px; ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke();
+      ctx.strokeStyle = S.cutOn ? (cutMode ? '#ff1a1a' : '#e03131') : 'rgba(224,49,49,0.55)'; ctx.lineWidth = (cutMode ? 3.6 : 2.3) * px; ctx.setLineDash(S.cutOn ? [] : [8 * px, 6 * px]); ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }
     const cz = czAll.filter(q => q.z); if (cz.length && S.cutOn) { ctx.save(); ctx.globalAlpha = fadeCut ? 0.22 : 1; ctx.fillStyle = fadeCut ? 'rgba(224,49,49,0.06)' : 'rgba(224,49,49,0.10)'; ctx.beginPath(); const bb = BZ.bbox(S.paths), m = Math.max(bb.w, bb.h) * 4; ctx.rect(bb.x0 - m, bb.y0 - m, bb.w + 2 * m, bb.h + 2 * m); cz.forEach(tracePath); ctx.fill('evenodd'); ctx.restore(); } }
   { const lg = $('cutLegend'); if (lg) { lg.hidden = !S.paths.length;
-      if (EDIT_TOOLS.includes(tool) && editKind === 'cut') lg.innerHTML = '<b class="cut">Editing CUT lines (red)</b> · etch lines are faded and locked';
-      else if (EDIT_TOOLS.includes(tool)) lg.innerHTML = '<b class="etch">Editing ETCH lines</b> · <b class="cut">cut lines</b> are faded and locked';
+      if (cutMode) lg.innerHTML = '<b class="cut">CUT mode</b> · etch lines are faded and locked';
+      else if (EDIT_TOOLS.includes(tool)) lg.innerHTML = '<b class="etch">ETCH mode</b> · <b class="cut">cut lines</b> are faded and locked';
       else lg.innerHTML = '<b class="cut">Red = CUT through</b> · <b class="etch">Black = ETCH</b>'; } }
-  ctx.save(); ctx.globalAlpha = fadeEtch ? 0.22 : 1;
+  ctx.save(); ctx.globalAlpha = fadeEtch ? 0.2 : 1;
   ctx.strokeStyle = fadeEtch ? '#6a6a6a' : '#151515'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); S.paths.forEach(p => { if (!p.cut && (!window.T4 || T4.plain(p))) tracePath(p); }); ctx.stroke(); if (window.T4) T4.paintThick(px);
   ctx.restore();
+  // CUT mode with a point tool: show the dots of the cut lines so they can be dragged
+  if (cutMode && (tool === 'p2p' || tool === 'cutout' || tool === 'sel')) { let n = 0; ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#e03131'; ctx.lineWidth = 2 * px;
+    for (const q of S.paths) { if (!q.cut || q.hole) continue; for (const nd of q.n) { if (n++ > 700) break; ctx.beginPath(); ctx.arc(nd.x, nd.y, 4.2 * px, 0, 7); ctx.fill(); ctx.stroke(); } } ctx.restore(); }
   // highlighted paths (active in Nodes, first pick in Skip)
   const hi = new Set(act); if (tool === 'skip' && skip.first >= 0) hi.add(skip.first); if (pen && S.paths[pen.pi]) hi.add(pen.pi);
   if (hi.size) { ctx.strokeStyle = tool === 'skip' ? '#e8590c' : '#1971c2'; ctx.lineWidth = 2.4 * px; ctx.beginPath(); for (const pi of hi) if (S.paths[pi]) tracePath(S.paths[pi]); ctx.stroke(); }
@@ -413,13 +418,14 @@ function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.l
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
 function syncEditLayerUI() {
-  const bar = $('editBar'); if (bar) bar.hidden = !EDIT_TOOLS.includes(tool);
   document.body.classList.toggle('edit-cut', editKind === 'cut');
   document.body.classList.toggle('edit-etch', editKind !== 'cut');
-  const seg = $('editKind'); if (seg) seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.edit === 'cut') === (editKind === 'cut')));
+  const seg = $('editKind'); if (seg) seg.querySelectorAll('button').forEach(b => { const on = (b.dataset.edit === 'cut') === (editKind === 'cut'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  const bn = $('modeBanner'); if (bn) { bn.hidden = editKind !== 'cut'; bn.textContent = 'CUT MODE — editing red cut lines. Etch lines are locked.'; }
 }
 function setEditKind(k, opts) {
   k = k === 'cut' ? 'cut' : 'etch';
+  if (k === 'etch' && tool === 'cutout' && !(opts && opts.keepTool)) setTool('sel');
   const silent = !!(opts && opts.silent), same = editKind === k;
   editKind = k;
   try { localStorage.setItem('wp-editKind', k); } catch (e) {}
@@ -437,14 +443,15 @@ function setEditKind(k, opts) {
     const keep = CN.C.sel.filter(p => inLayer(p));
     if (keep.length !== CN.C.sel.length) { CN.C.sel = keep; if (!keep.length) { CN.C.area = null; CN.C.virt = null; } }
   }
+  if (window.T2 && T2.SH) { T2.SH.asCut = k === 'cut'; const sc = $('shCut'); if (sc) sc.checked = k === 'cut'; }
   syncEditLayerUI();
   draw();
   if (!silent && !same) toast(k === 'cut' ? 'Editing CUT lines (red). Etch lines are faded and locked.' : 'Editing ETCH lines. Cut lines are faded and locked.');
 }
 function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.CN) CN.onTool(t); if (window.TA) TA.onTool(t, prev); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
-  document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); syncEditLayerUI(); draw(); }
+  document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); if (t === 'cutout' && prev !== 'cutout' && editKind !== 'cut') { setEditKind('cut', { silent: true }); toast('CUT MODE: the red cut lines are lit up. Tap Cut out again, or ETCH, to go back.', 3500); } else if (t === 'shapes' && window.T2 && T2.SH) { T2.SH.asCut = editKind === 'cut'; const sc = $('shCut'); if (sc) sc.checked = editKind === 'cut'; } syncEditLayerUI(); draw(); }
 document.querySelectorAll('#editKind button').forEach(b => b.onclick = () => setEditKind(b.dataset.edit));
-document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool));
+document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => { if (b.dataset.tool === 'cutout' && tool === 'cutout') { setTool('move'); setEditKind('etch', { silent: true, keepTool: true }); toast('Back to ETCH mode'); return; } setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool); });
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
 $('delWhole').onclick = () => { delMode = 'whole'; $('delWhole').classList.add('on'); $('delStretch').classList.remove('on'); $('delTip').textContent = 'Tap a line: the whole line is removed.'; };
 const ACT = { nCorner: () => nodeType(false), nSmooth: () => nodeType(true), nLine: () => segType(true), nCurve: () => segType(false), nAdd: addNode, nDel: delNodes, nBreak: () => { if (!sel.size && act.size === 1) { const pi = [...act][0]; setTool('line'); T2.startBreak(pi); return; } breakNodes(); }, nJoin: joinNodes, nSeg: delSegs, nStraight: straighten, nAll: selectLine, nCut: toggleCut };
@@ -667,7 +674,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Editing ETCH lines or CUT lines, and Send to Waylands Post. A saved v5.8 copy is still there if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: one big ETCH | CUT switch (Cut out turns CUT mode on), and Send to Waylands Post. A saved v5.8 copy is still there if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;

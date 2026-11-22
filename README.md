@@ -39,6 +39,15 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a red outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.11 - One big ETCH | CUT switch
+
+* A big **Editing: ETCH lines | CUT lines** switch is always on screen above the tools.
+* Tapping **Cut out** turns CUT mode on straight away: the cut lines light up red and glow, etch lines fade and are locked, and a red banner says **CUT MODE**. Tap **Cut out** again (or **ETCH lines**) to go back. Draw the cut, Tap an area and Lasso are still inside Cut out.
+* In CUT mode **Select** (tap, drag, delete), **Point to point** (dots, bend, new lines), **Draw**, **Eraser**, **Break**, **Shapes**, **Trace edge**, **Clone** and **Clear space** work on cut lines exactly as they do on etch lines. New lines and shapes are red cuts. Etch lines are never touched in CUT mode, and cut lines are never touched in ETCH mode.
+* The editor always opens in ETCH mode.
+
+**Laser:** no change. A design you do not edit exports byte-for-byte the same files as v5.10, whichever mode you were in.
+
 ## v5.10 - Edit CUT lines or ETCH lines, and Send to Waylands Post
 
 **Editing: ETCH lines | CUT lines** sits on Select, Point to point, Draw, Eraser, Break, Trace edge and Clone.

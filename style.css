@@ -221,3 +221,13 @@ label.chk.tbfull, .hint.tbfull{grid-column:1/-1}
 #teHint .tecount{color:var(--dim)}
 
 #teWay button.on{background:#0c8c7a;color:#fff}
+
+/* v5.11: one big always-visible ETCH | CUT switch, and a banner while in CUT mode */
+.editbar{padding:8px 10px 4px}
+.editbar .kindseg{min-height:58px}
+.modepill button{min-height:58px!important;font-size:19px!important}
+.modepill button[data-edit="cut"].on{box-shadow:0 0 14px rgba(255,40,40,.75) inset}
+.modebanner{position:absolute;left:0;right:0;top:0;z-index:4;background:#e03131;color:#fff;font-weight:800;font-size:13px;text-align:center;padding:5px 8px;letter-spacing:.02em;pointer-events:none}
+.modebanner[hidden]{display:none}
+body.edit-cut .stats{top:34px}
+body.edit-cut #toolDock{box-shadow:0 -3px 0 #e03131}

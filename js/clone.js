@@ -44,6 +44,7 @@ window.CN = (() => {
     if (editCut() && window.HH) { const hi = HH.hitHole(u, t * 0.6); if (hi >= 0 && layerOn(S.paths[hi])) return { list: [S.paths[hi]] }; }
     let best = null; S.paths.forEach((p, pi) => { if (!layerOn(p) || p.n.length < 2) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t && (!best || r.d < best.d)) best = { pi, d: r.d }; });
     const pack = () => { const c = window.T4 ? T4.chainOf(best.pi).list.map(i => S.paths[i]).filter(layerOn) : [S.paths[best.pi]]; const g = c[0] && c[0].xf && c[0].xf.g; return { list: g ? S.paths.filter(q => q.xf && q.xf.g === g && layerOn(q)) : c }; };
+    if (editCut() && !best) { let lk = null; S.paths.forEach(p => { if (layerOn(p) || p.n.length < 2) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t * 0.6 && (!lk || r.d < lk.d)) lk = r; }); if (lk) return { locked: true }; } // right on a locked etch line: never pick the cut round it
     if (editCut()) {
       let inside = null, ia = Infinity; for (const p of S.paths) { if (!layerOn(p) || !p.cut || !p.z) continue; const f = BZ.flatten(p, 0.5), b = BZ.bbox([p]); if (BZ.inside(f, u) && b.w * b.h < ia) { ia = b.w * b.h; inside = p; } }
       if (inside && (!best || best.d > t * 0.45)) return { list: [inside] };
