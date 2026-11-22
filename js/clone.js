@@ -15,6 +15,10 @@ window.CN = (() => {
   const live = () => C.sel.filter(p => S.paths.includes(p));
   const newG = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const isOuter = p => p && p.cut && !p.hole && (p.tabs || !innerCuts().includes(p));
+  const layerOn = p => !p ? false : (window.WP && WP.inLayer ? WP.inLayer(p) : !p.cut);
+  const editCut = () => !!(window.WP && WP.editKind === 'cut');
+  const lockedNote = () => editCut() ? 'That is an etch line — it is locked. Switch to Editing: ETCH lines to pick it.' : 'That is a cut line — it is locked. Switch to Editing: CUT lines to pick it.';
+
   const geomOf = p => p.hole ? { cx: p.hole.cx, cy: p.hole.cy, d: p.hole.d } : BZ.clone(p.n);
   const sigOf = p => p.hole ? `${p.hole.cx},${p.hole.cy},${p.hole.d}` : JSON.stringify(p.n);
   const holeR = (h, k) => (h.d / 2) / k;
@@ -37,14 +41,17 @@ window.CN = (() => {
   function commit(k0) { keepScale(k0); changed({ keepSel: true }); panel(); draw(); }
   // ---------- picking ----------
   function pick(u, e) { const t = tol(e);
-    if (window.HH) { const hi = HH.hitHole(u, t * 0.6); if (hi >= 0) return { list: [S.paths[hi]] }; }
-    let best = null; S.paths.forEach((p, pi) => { if (p.cut || p.n.length < 2) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t && (!best || r.d < best.d)) best = { pi, d: r.d }; });
-    const etchR = () => { const c = window.T4 ? T4.chainOf(best.pi).list.map(i => S.paths[i]) : [S.paths[best.pi]]; const g = c[0].xf && c[0].xf.g; return { list: g ? S.paths.filter(q => q.xf && q.xf.g === g) : c }; };
-    let edge = null; S.paths.forEach(p => { if (!p.cut || p.n.length < 2 || p.hole) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t * 0.7 && (!edge || r.d < edge.d)) edge = { p, d: r.d }; });
-    if (edge && (!best || edge.d < best.d - t * 0.15)) return { list: [edge.p] };
-    let inside = null, ia = Infinity; for (const p of S.paths) { if (!p.cut || !p.z || p.hole || isOuter(p)) continue; const f = BZ.flatten(p, 0.5), b = BZ.bbox([p]); if (BZ.inside(f, u) && b.w * b.h < ia) { ia = b.w * b.h; inside = p; } }
-    if (inside && (!best || best.d > t * 0.45)) return { list: [inside] }; // a tap inside a cut out picks it unless right on a line
-    if (best) return etchR(); if (edge) return { list: [edge.p] }; return null; }
+    if (editCut() && window.HH) { const hi = HH.hitHole(u, t * 0.6); if (hi >= 0 && layerOn(S.paths[hi])) return { list: [S.paths[hi]] }; }
+    let best = null; S.paths.forEach((p, pi) => { if (!layerOn(p) || p.n.length < 2) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t && (!best || r.d < best.d)) best = { pi, d: r.d }; });
+    const pack = () => { const c = window.T4 ? T4.chainOf(best.pi).list.map(i => S.paths[i]).filter(layerOn) : [S.paths[best.pi]]; const g = c[0] && c[0].xf && c[0].xf.g; return { list: g ? S.paths.filter(q => q.xf && q.xf.g === g && layerOn(q)) : c }; };
+    if (editCut()) {
+      let inside = null, ia = Infinity; for (const p of S.paths) { if (!layerOn(p) || !p.cut || !p.z) continue; const f = BZ.flatten(p, 0.5), b = BZ.bbox([p]); if (BZ.inside(f, u) && b.w * b.h < ia) { ia = b.w * b.h; inside = p; } }
+      if (inside && (!best || best.d > t * 0.45)) return { list: [inside] };
+    }
+    if (best) return pack();
+    let locked = null; S.paths.forEach(p => { if (layerOn(p) || p.n.length < 2) return; const r = BZ.nearest(p, u, 0.3); if (r && r.d <= t && (!locked || r.d < locked.d)) locked = r; });
+    if (locked) return { locked: true };
+    return null; }
   function choose(list, grp) { C.virt = null; C.area = null; C.grp = !!grp; C.sel = list.slice(); C.g = list[0] && list[0].xf ? list[0].xf.g : null; panel(); draw(); }
   // ---------- v5.3 area selection: Lasso (free loop), Box (rectangle), Select all ----------
   const clean = p => { const q = BZ.clone(Object.assign({}, p, { xf: undefined })); delete q.xf; delete q.tabs; delete q.tabBase; delete q._tsig; return q; };
@@ -70,9 +77,11 @@ window.CN = (() => {
     return out; }
   function counts(list) { let e = 0, c = 0, h = 0; for (const p of list) { if (p.hole) h++; else if (p.cut) c++; else e++; } const pl = (n, a, b) => n ? `${n} ${n === 1 ? a : b}` : '';
     return [pl(e, 'line', 'lines'), pl(c, 'cut out', 'cut outs'), pl(h, 'hole', 'holes')].filter(Boolean).join(', ') || 'nothing'; }
-  const OUTER_NOTE = 'A Lasso, Box or All does not include the outside cut line - tap it with 👆 Tap one if you want a copy of it.';
+  const OUTER_NOTE = 'A Lasso, Box or All does not include the outside cut line - switch to Editing: CUT lines, or tap it with 👆 Tap one.';
   function pickArea(poly) { const lp = BZ.fromPoints(poly, true), pb = pbox(poly); let outerHit = false; const whole = [], pieces = []; let trimmed = 0;
-    for (const p of S.paths) { if (!p.hole && p.n.length < 2) continue; if (!touches(p, poly, lp, pb)) continue; if (isOuter(p)) { outerHit = true; continue; }
+    for (const p of S.paths) { if (!p.hole && p.n.length < 2) continue; if (!touches(p, poly, lp, pb)) continue;
+      if (!layerOn(p)) { if (isOuter(p)) outerHit = true; continue; }
+      if (isOuter(p) && !editCut()) { outerHit = true; continue; }
       if (C.trim && !p.cut && !p.hole) { const r = trimPath(p, poly, lp); if (r.length !== 1 || JSON.stringify(r[0].n) !== JSON.stringify(p.n)) trimmed++; pieces.push(...r); } else whole.push(p); }
     return { whole, pieces, trimmed, outerHit }; }
   function selectArea(poly) { C.last = poly; const { whole, pieces, trimmed, outerHit } = pickArea(poly);
@@ -107,7 +116,7 @@ window.CN = (() => {
   function clearArea(msg) { C.area = null; panel(); draw(); if (msg) toast(msg); }
   function cloneArea() { const A = C.area; if (!A) return; areaPick(); if (!A.list.length) { toast('Nothing inside the area yet - make it bigger or move it over some lines'); return; }
     const poly = A.poly; C.area = null; selectArea(poly); doClone(); }
-  function selectAll() { const list = S.paths.filter(p => (p.hole || p.n.length >= 2) && !isOuter(p)); if (!list.length) { toast('Nothing to pick yet' + (S.paths.length ? ' - ' + OUTER_NOTE : '')); return; }
+  function selectAll() { const list = S.paths.filter(p => (p.hole || p.n.length >= 2) && layerOn(p) && (editCut() || !isOuter(p))); if (!list.length) { toast('Nothing to pick yet' + (S.paths.some(isOuter) && !editCut() ? ' - ' + OUTER_NOTE : '')); return; }
     const k = kmm(), b = bbOf(list.map(p => ({ n: p.n, z: p.z, hole: p.hole })), k), m = 2 / k; setArea([[b.x0 - m, b.y0 - m], [b.x1 + m, b.y0 - m], [b.x1 + m, b.y1 + m], [b.x0 - m, b.y1 + m]]);
     toast(`The whole design is in the area: ${areaText()}. ${S.paths.some(isOuter) ? OUTER_NOTE + ' ' : ''}Tap + Clone this area to copy it.`, 4500); }
   // ---------- actions ----------
@@ -216,9 +225,10 @@ window.CN = (() => {
       if (g.moved && poly && poly.length >= 3) { const b = pbox(poly); if ((b.x1 - b.x0) * view.s >= 12 && (b.y1 - b.y0) * view.s >= 12) { setArea(poly); toast(`${areaText()}. Drag the squares to make the area bigger or smaller, drag inside to move it. Nothing is copied until you tap + Clone this area.`, 4500); return; } }
       draw(); if (g.moved) return; g.cn = 'tap'; }
     if (g.cn === 'tap') { if (g.moved) return; C.virt = null; const r = pick(g.u0, e);
-      if (r && r.outer) { C.sel = []; panel(); draw(); toast('A Lasso, Box or All does not include the outside cut line - tap it with 👆 Tap one if you want a copy of it.', 4500); return; }
+      if (r && r.locked) { C.sel = []; panel(); draw(); toast(lockedNote()); return; }
+      if (r && r.outer) { C.sel = []; panel(); draw(); toast('A Lasso, Box or All does not include the outside cut line - switch to Editing: CUT lines, or tap it with 👆 Tap one.', 4500); return; }
       if (!r) { if (C.sel.length) { C.sel = []; panel(); draw(); } return; } choose(r.list); return; }
-    if (!g.moved) { const r = pick(g.u0, e); if (r && r.list && !r.list.every(q => C.sel.includes(q))) choose(r.list); return; }
+    if (!g.moved) { const r = pick(g.u0, e); if (r && r.locked) { toast(lockedNote()); return; } if (r && r.list && !r.list.every(q => C.sel.includes(q))) choose(r.list); return; }
     undoSt.push(g.snap); if (undoSt.length > 50) undoSt.shift(); redoSt = []; changed({ keepSel: true }); panel(); draw(); }
   // ---------- panel ----------
   function setGroupKind(toCut) { const list = (live() || []).concat(C.virt || []); if (!list.length) { toast('Tap a line or group first, then ETCH or CUT'); return; }

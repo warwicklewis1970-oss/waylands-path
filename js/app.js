@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.9';
+const APP_VERSION = 'v5.10';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -13,6 +13,10 @@ const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detai
   widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, photoOp: 25, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
 function SHEET0() { return { on: false, W: 200, H: 200, margin: 5, gap: 5, nx: 1, ny: 1, place: 'centre' }; }
 let S = DEFAULTS(), srcImg = null, srcEl = null, undoSt = [], redoSt = [], tool = 'move';
+const EDIT_TOOLS = ['sel', 'p2p', 'draw', 'brk', 'rub', 'clone', 'edge'];
+let editKind = 'etch';
+try { const v = localStorage.getItem('wp-editKind'); if (v === 'cut' || v === 'etch') editKind = v; } catch (e) {}
+const inLayer = p => !!p && (editKind === 'cut' ? !!p.cut : !p.cut);
 let sel = new Set(), act = new Set(), lastTap = null, pen = null, skip = { mode: 'skip', first: -1 }, delMode = 'stretch', lw = 0;
 const view = { s: 1, tx: 0, ty: 0 };
 const cv = $('stage'), ctx = cv.getContext('2d');
@@ -74,12 +78,19 @@ function paint() { paintN++; const d = window.devicePixelRatio || 1, W = cv.widt
     ctx.strokeStyle = '#d8d0c2'; ctx.lineWidth = px; ctx.strokeRect(0, 0, S.src.w, S.src.h); }
   ctx.lineCap = ctx.lineJoin = 'round';
   // red edge = the cut line (dashed when cutting is switched off). Colour is on screen only - G-code and export SVG stay the same.
+  // When Editing CUT or ETCH, the other layer is faded so you only work on one kind of line.
+  const fadeCut = editKind !== 'cut', fadeEtch = editKind === 'cut';
   { const czAll = S.paths.filter(q => q.cut);
-    if (czAll.length) { ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = S.cutOn ? 'rgba(224,49,49,0.32)' : 'rgba(224,49,49,0.18)'; ctx.lineWidth = 6.4 * px; ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke();
+    if (czAll.length) { ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.globalAlpha = fadeCut ? 0.28 : 1; ctx.strokeStyle = S.cutOn ? 'rgba(224,49,49,0.32)' : 'rgba(224,49,49,0.18)'; ctx.lineWidth = 6.4 * px; ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke();
       ctx.strokeStyle = S.cutOn ? '#e03131' : 'rgba(224,49,49,0.55)'; ctx.lineWidth = 2.3 * px; ctx.setLineDash(S.cutOn ? [] : [8 * px, 6 * px]); ctx.beginPath(); czAll.forEach(tracePath); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }
-    const cz = czAll.filter(q => q.z); if (cz.length && S.cutOn) { ctx.save(); ctx.fillStyle = 'rgba(224,49,49,0.10)'; ctx.beginPath(); const bb = BZ.bbox(S.paths), m = Math.max(bb.w, bb.h) * 4; ctx.rect(bb.x0 - m, bb.y0 - m, bb.w + 2 * m, bb.h + 2 * m); cz.forEach(tracePath); ctx.fill('evenodd'); ctx.restore(); } }
-  { const lg = $('cutLegend'); if (lg) lg.hidden = !S.paths.length; }
-  ctx.strokeStyle = '#151515'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); S.paths.forEach(p => { if (!p.cut && (!window.T4 || T4.plain(p))) tracePath(p); }); ctx.stroke(); if (window.T4) T4.paintThick(px);
+    const cz = czAll.filter(q => q.z); if (cz.length && S.cutOn) { ctx.save(); ctx.globalAlpha = fadeCut ? 0.22 : 1; ctx.fillStyle = fadeCut ? 'rgba(224,49,49,0.06)' : 'rgba(224,49,49,0.10)'; ctx.beginPath(); const bb = BZ.bbox(S.paths), m = Math.max(bb.w, bb.h) * 4; ctx.rect(bb.x0 - m, bb.y0 - m, bb.w + 2 * m, bb.h + 2 * m); cz.forEach(tracePath); ctx.fill('evenodd'); ctx.restore(); } }
+  { const lg = $('cutLegend'); if (lg) { lg.hidden = !S.paths.length;
+      if (EDIT_TOOLS.includes(tool) && editKind === 'cut') lg.innerHTML = '<b class="cut">Editing CUT lines (red)</b> · etch lines are faded and locked';
+      else if (EDIT_TOOLS.includes(tool)) lg.innerHTML = '<b class="etch">Editing ETCH lines</b> · <b class="cut">cut lines</b> are faded and locked';
+      else lg.innerHTML = '<b class="cut">Red = CUT through</b> · <b class="etch">Black = ETCH</b>'; } }
+  ctx.save(); ctx.globalAlpha = fadeEtch ? 0.22 : 1;
+  ctx.strokeStyle = fadeEtch ? '#6a6a6a' : '#151515'; ctx.lineWidth = 1.6 * px; ctx.beginPath(); S.paths.forEach(p => { if (!p.cut && (!window.T4 || T4.plain(p))) tracePath(p); }); ctx.stroke(); if (window.T4) T4.paintThick(px);
+  ctx.restore();
   // highlighted paths (active in Nodes, first pick in Skip)
   const hi = new Set(act); if (tool === 'skip' && skip.first >= 0) hi.add(skip.first); if (pen && S.paths[pen.pi]) hi.add(pen.pi);
   if (hi.size) { ctx.strokeStyle = tool === 'skip' ? '#e8590c' : '#1971c2'; ctx.lineWidth = 2.4 * px; ctx.beginPath(); for (const pi of hi) if (S.paths[pi]) tracePath(S.paths[pi]); ctx.stroke(); }
@@ -252,12 +263,12 @@ $('addShape').onclick = () => { closeMenu(); setTool('shapes'); };
 // ---------- geometry helpers on the whole drawing ----------
 const pkey = (pi, j) => pi + ':' + j, unkey = k => k.split(':').map(Number);
 const same = (a, b) => Math.abs(a.x - b.x) < 1e-3 && Math.abs(a.y - b.y) < 1e-3;
-function linked(pi, j) { const nd = S.paths[pi].n[j], out = []; S.paths.forEach((p, qi) => p.n.forEach((m, k) => { if ((qi !== pi || k !== j) && same(m, nd)) out.push(m); })); return out; }
+function linked(pi, j) { const nd = S.paths[pi].n[j], cut = !!S.paths[pi].cut, out = []; S.paths.forEach((p, qi) => { if (!!p.cut !== cut) return; p.n.forEach((m, k) => { if ((qi !== pi || k !== j) && same(m, nd)) out.push(m); }); }); return out; }
 const isEnd = (p, j) => !p.z && (j === 0 || j === p.n.length - 1);
 function hitNode(u, tolU, only) { let best = null, bd = tolU; const list = only ? [...only] : S.paths.map((_, i) => i);
-  for (const pi of list) { const p = S.paths[pi]; if (!p) continue; p.n.forEach((nd, j) => { const d = Math.hypot(nd.x - u[0], nd.y - u[1]); if (d < bd) { bd = d; best = { pi, j }; } }); } return best; }
+  for (const pi of list) { const p = S.paths[pi]; if (!p || (!only && !inLayer(p))) continue; p.n.forEach((nd, j) => { const d = Math.hypot(nd.x - u[0], nd.y - u[1]); if (d < bd) { bd = d; best = { pi, j }; } }); } return best; }
 function hitHandle(u, tolU) { let best = null, bd = tolU; for (const h of handleList()) { const q = S.paths[h.pi].n[h.j][h.side], d = Math.hypot(q[0] - u[0], q[1] - u[1]); if (d < bd) { bd = d; best = h; } } return best; }
-function hitPath(u, tolU, skipIdx = -1) { const e = hitPathF(u, tolU, skipIdx, p => !p.cut), c = hitPathF(u, tolU, skipIdx, p => p.cut && !p.hole); if (e && c) return e.d <= c.d + 5 / view.s ? e : c; return e || c; }
+function hitPath(u, tolU, skipIdx = -1) { return hitPathF(u, tolU, skipIdx, inLayer); }
 function hitPathF(u, tolU, skipIdx, filt) { let best = null; S.paths.forEach((p, pi) => { if (pi === skipIdx || !p.n.length || !filt(p)) return; const bb = BZ.bbox([p]); if (!bb || u[0] < bb.x0 - tolU || u[0] > bb.x1 + tolU || u[1] < bb.y0 - tolU || u[1] > bb.y1 + tolU) return;
     const r = BZ.nearest(p, u, Math.max(0.2, tolU / 6)); if (r && r.d <= tolU && (!best || r.d < best.d)) best = Object.assign(r, { pi }); }); return best; }
 const tolPx = e => (e && e.pointerType === 'mouse' ? 9 : 16) / view.s;
@@ -401,8 +412,38 @@ function penDrag(g, u) { const p = S.paths[pen.pi], nd = p.n[g.j], dx = u[0] - n
 function penDone() { if (!pen) return; const p = S.paths[pen.pi]; if (p && p.n.length < 2) S.paths.splice(pen.pi, 1); pen = null; changed(); }
 $('penDone').onclick = penDone; $('penBack').onclick = () => { if (!pen) return; const p = S.paths[pen.pi]; if (p.n.length > 1) { p.n.pop(); p.n[p.n.length - 1].o = null; } else { S.paths.splice(pen.pi, 1); pen = null; } changed(); };
 // ---------- tools ----------
+function syncEditLayerUI() {
+  const bar = $('editBar'); if (bar) bar.hidden = !EDIT_TOOLS.includes(tool);
+  document.body.classList.toggle('edit-cut', editKind === 'cut');
+  document.body.classList.toggle('edit-etch', editKind !== 'cut');
+  const seg = $('editKind'); if (seg) seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.edit === 'cut') === (editKind === 'cut')));
+}
+function setEditKind(k, opts) {
+  k = k === 'cut' ? 'cut' : 'etch';
+  const silent = !!(opts && opts.silent), same = editKind === k;
+  editKind = k;
+  try { localStorage.setItem('wp-editKind', k); } catch (e) {}
+  if (window.T4) {
+    if (T4.setInkCut) T4.setInkCut(k === 'cut', { fromEdit: true });
+    if (T4.TE) T4.TE.cut = k === 'cut';
+    if (T4.SL && T4.SL.list) {
+      T4.SL.list = T4.SL.list.filter(i => S.paths[i] && inLayer(S.paths[i]));
+      if (!T4.SL.list.length) { T4.SL.merged = null; T4.SL.pendingCut = null; T4.SL.gap = 0; }
+    }
+    if (!same && T4.teClear && T4.TE && (T4.TE.a || T4.TE.b || T4.TE.preview)) T4.teClear();
+    if (T4.panel) T4.panel();
+  }
+  if (window.CN && CN.C && CN.C.sel && CN.C.sel.length) {
+    const keep = CN.C.sel.filter(p => inLayer(p));
+    if (keep.length !== CN.C.sel.length) { CN.C.sel = keep; if (!keep.length) { CN.C.area = null; CN.C.virt = null; } }
+  }
+  syncEditLayerUI();
+  draw();
+  if (!silent && !same) toast(k === 'cut' ? 'Editing CUT lines (red). Etch lines are faded and locked.' : 'Editing ETCH lines. Cut lines are faded and locked.');
+}
 function setTool(t) { if (tool === 'pen' && t !== 'pen') penDone(); const prev = tool; tool = t; if (window.T4) T4.onTool(t, prev); if (window.CN) CN.onTool(t); if (window.TA) TA.onTool(t, prev); if (window.HH && t !== 'shapes' && HH.on) HH.setOn(false); if (window.TB && t !== 'shapes' && TB.on) TB.setOn(false); document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
-  document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); draw(); }
+  document.querySelectorAll('#toolOpts .topts').forEach(o => { o.hidden = !o.dataset.opts.split(' ').includes(t); }); if (t !== 'nodes') { sel.clear(); act.clear(); lastTap = null; } skip.first = -1; updSel(); updSkip(); cv.style.cursor = t === 'move' ? 'grab' : 'crosshair'; if (window.T2) T2.onTool(t); syncEditLayerUI(); draw(); }
+document.querySelectorAll('#editKind button').forEach(b => b.onclick = () => setEditKind(b.dataset.edit));
 document.querySelectorAll('#tools .tool').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool ? 'move' : b.dataset.tool));
 $('delStretch').onclick = () => { delMode = 'stretch'; $('delStretch').classList.add('on'); $('delWhole').classList.remove('on'); $('delTip').textContent = 'Tap a line: it is removed up to the junction each side.'; };
 $('delWhole').onclick = () => { delMode = 'whole'; $('delWhole').classList.add('on'); $('delStretch').classList.remove('on'); $('delTip').textContent = 'Tap a line: the whole line is removed.'; };
@@ -572,7 +613,7 @@ async function saveZip() { let o; try { o = buildOut(); } catch (e) { toast(e.me
   download(blob, o.zipName); listFiles(o, `${o.zipName} is in your Downloads folder. Right-click › Extract All, then open the .nc files in LaserGRBL. Inside:`); }
 function saveSvg() { let o; try { o = buildOut(); } catch (e) { toast(e.message); return; } download(new Blob([o.svgAll], { type: 'image/svg+xml' }), o.svgName); $('exOut').innerHTML = `<div class="ok">${esc(o.svgName)} saved to Downloads (${f1(o.fr.W)} × ${f1(o.fr.H)} mm).</div>`; }
 $('shareBtn').onclick = shareFiles; $('saveZipBtn').onclick = saveZip; $('svgBtn').onclick = saveSvg;
-  const wdSave = () => saveWaylandDesign(); if ($('wdSave')) $('wdSave').onclick = wdSave; if ($('wdSave2')) $('wdSave2').onclick = wdSave; if ($('wdToForge')) $('wdToForge').onclick = sendToForge;
+  const wdSave = () => saveWaylandDesign(); if ($('wdSave')) $('wdSave').onclick = wdSave; if ($('wdSave2')) $('wdSave2').onclick = wdSave; if ($('wdToForge')) $('wdToForge').onclick = sendToForge; if ($('wdToPost')) $('wdToPost').onclick = sendToPost;
   if ($('wdOpen')) $('wdOpen').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) openFile(f); });
 // v4.5 Export = the Burn settings sheet, like Wayland Forge: one section per step (Mode / Power / Speed / Passes), then Export
 async function saveSeparate() { let o; try { o = buildOut(); } catch (e) { toast(e.message); return; } for (const f of o.files) { download(new Blob([f.data], { type: mimeOf(f.name) }), f.name); await new Promise(r => setTimeout(r, 900)); }
@@ -626,7 +667,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Save as Wayland design, Send to Wayland Forge, and a saved v5.8 copy if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Editing ETCH lines or CUT lines, and Send to Waylands Post. A saved v5.8 copy is still there if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -672,6 +713,14 @@ async function openWaylandDesign(doc) { if (!WD.isDesign(doc)) throw new Error('
   }
   if (forgeSvg) { return openFromForge({ svg: forgeSvg, name: doc.name, photos: doc.apps['wayland-forge'].photos || 0, W: doc.artboard && doc.artboard.width, H: doc.artboard && doc.artboard.height }); }
   toast('That Wayland design has no lines this app can edit yet', 4000); return false; }
+
+async function sendToPost() { if (!S.paths.length) { toast('No lines to send yet'); return; }
+  if (!confirm('Open this design in Waylands Post?\n\n• Post previews it and makes the laser or print files.\n• Your project here in Waylands Path is kept just as it is.\n• Your usual Export buttons here still work.\n• If you are sending it to a laptop, tap Cancel and use Save as Wayland design instead.')) return;
+  const doc = makeDesign();
+  try { await saveNow(); await FF.put('toPost', { v: 2, from: 'waylands-path', name: doc.name, design: doc, t: Date.now() }); }
+  catch (e) { downloadDesign(doc); toast('Could not hand it over on this device, so the file was saved instead: ' + WD.fileName(doc), 4500); return; }
+  location.href = new URL('../waylands-post/?from=path', location.href).href; }
+
 async function sendToForge() { if (!S.paths.length) { toast('No lines to send yet'); return; }
   if (!confirm('Open this design in Wayland Forge?\n\n• It opens there as a new project, as lines you can place on a badge.\n• Your project here in Waylands Path is kept just as it is.\n• If you are sending it to a laptop, tap Cancel and use Save as Wayland design instead.')) return;
   const doc = makeDesign();
@@ -700,4 +749,4 @@ $('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromFor
 $('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
 setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
-window.WP = { photoLast, paint, makeDesign, openWaylandDesign, saveWaylandDesign, sendToForge, overlayFile, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { photoLast, paint, makeDesign, openWaylandDesign, saveWaylandDesign, sendToForge, sendToPost, overlayFile, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; }, get editKind() { return editKind; }, setEditKind, inLayer, EDIT_TOOLS, syncEditLayerUI };

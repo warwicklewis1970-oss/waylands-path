@@ -68,6 +68,13 @@
       <button data-tool="clone" class="tool" title="Clone: copy a line, shape, hole or a whole group (lasso / box), then size, turn and move it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.25"/></svg><span>Clone</span></button>
       <button data-tool="edge" class="tool" title="Trace edge: draw a line alongside another, at a distance you set"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5 C8 4.5, 16 4.5, 20.5 17.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M5.2 19.2 C9 8.2, 15 8.2, 18.8 19.2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="2.4 2"/></svg><span>Trace edge</span></button>
     </div>
+    <div id="editBar" class="editbar" hidden>
+      <span class="editlbl">Editing:</span>
+      <div class="seg kindseg" id="editKind" role="tablist" aria-label="Editing ETCH lines or CUT lines">
+        <button type="button" data-edit="etch" class="on">ETCH lines</button>
+        <button type="button" data-edit="cut">CUT lines</button>
+      </div>
+    </div>
     <div id="toolOpts">
       <div data-opts="move" class="topts">Pick a tool. With no tool picked, one finger moves the picture. Two fingers always move and zoom.</div>
       <div data-opts="sel" class="topts t4p" hidden>
@@ -77,10 +84,10 @@
         <div class="t4b acts" id="t4slActs"><button id="t4slDel" class="danger">🗑 Delete line</button><button id="t4slBrkB">✂ Break</button><button id="t4slTh">≡ Thickness</button></div>
         <div class="t4b" id="t4slBrk" hidden><button id="t4slNo">✕ Cancel</button><button id="t4slOk" class="accent">✓ Confirm break</button></div></div>
       <div data-opts="p2p" class="topts t4p" hidden>
-        <div class="seg kindseg" id="ppKind"><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="seg kindseg inkkind" id="ppKind" hidden><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
         <div class="t4h" id="t4ppHint"></div><div class="t4b"><button id="t4ppUndo">↶ Undo</button><button id="t4ppDone" class="accent">✓ Done</button></div></div>
       <div data-opts="draw" class="topts t4p" hidden>
-        <div class="seg kindseg" id="drKind"><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="seg kindseg inkkind" id="drKind" hidden><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
         <div class="t4h">Draw with one finger. The line is smoothed and its ends snap onto nearby lines. Two fingers move the picture. Pick <b>ETCH</b> or <b>CUT</b> before you draw.</div><div class="t4b"><button id="t4drUndo" class="big2">↶ Undo</button></div></div>
       <div data-opts="brk" class="topts t4p" hidden><div class="t4b brmode"><button data-brmode="del" aria-pressed="true">✂ Remove a section</button><button data-brmode="add" aria-pressed="false">＋ Add a line</button></div><div class="t4h" id="t4brHint"></div><div class="t4b"><button id="t4brNo">✕ Cancel</button><button id="t4brOk" class="accent">✓ Confirm</button></div></div>
       <div data-opts="rub" class="topts t4p" hidden><div class="t4h">Rub over lines to erase. Tap a line to remove it up to the next junction.</div>
@@ -125,7 +132,7 @@
         <div class="stepper" id="teDistRow"><span class="lbl2">Distance</span><button type="button" id="teMmM" aria-label="Less">−</button><input type="number" id="teMm" class="num" inputmode="decimal" min="0.1" max="50" step="0.1" value="2"><button type="button" id="teMmP" aria-label="More">+</button><span class="u">mm</span></div>
         <div class="t4h" id="teHint"></div>
         <div class="t4b" id="teWay" hidden><button type="button" data-teway="short">Shorter way</button><button type="button" data-teway="long">Longer way</button><button type="button" data-teway="whole">Whole loop</button></div>
-        <div class="seg kindseg" id="teKind"><button type="button" data-kind="etch" class="on">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="seg kindseg inkkind" id="teKind" hidden><button type="button" data-kind="etch" class="on">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
         <div class="t4b"><button type="button" id="teSwap">⇄ Swap side</button><button type="button" id="teNo">✕ Cancel</button><button type="button" id="teGo" class="accent big2">✓ Add this line</button></div>
       </div>
       <div data-opts="nodes" class="topts nopts" hidden>
@@ -328,7 +335,8 @@
       <div class="row"><button id="shareBtn" class="accent grow big2">📤 Share laser files</button></div>
       <div class="row"><button id="saveZipBtn" class="grow">💾 Save laser zip</button><button id="svgBtn" class="grow">⬇ SVG only</button></div>
       <div class="row"><button id="wdSave" class="grow">💾 Save as Wayland design</button><button id="wdToForge" class="grow">✏️ Send to Wayland Forge</button></div>
-      <div class="hint">A Wayland design is a file both apps can open. Send to Wayland Forge works on this same device; to a laptop, use Save as Wayland design and open the file there. Your usual laser Export buttons stay as they are.</div>
+      <div class="row"><button id="wdToPost" class="grow">📦 Send to Waylands Post <span class="dim">(make the files)</span></button></div>
+      <div class="hint">A Wayland design is a file both apps can open. Send to Wayland Forge or Waylands Post works on this same device; to a laptop, use Save as Wayland design and open the file there. Your usual laser Export buttons stay as they are.</div>
       <div id="exOut" class="exout"></div>
     </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">

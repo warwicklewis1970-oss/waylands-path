@@ -39,6 +39,22 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a red outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.10 - Edit CUT lines or ETCH lines, and Send to Waylands Post
+
+**Editing: ETCH lines | CUT lines** sits on Select, Point to point, Draw, Eraser, Break, Trace edge and Clone.
+
+* **CUT lines** — tools only work on red cut lines (the outside cut, inner cuts, holes, slots and tabs). Etch lines are faded and locked: they cannot be snapped to, erased, selected or dragged.
+* **ETCH lines** — the same tools only work on black etch lines, and cut lines are faded and locked.
+* In CUT mode, **Draw** and **Point to point** make a red cut line. Edits keep the line as a cut.
+* **Select**: tap a cut line, then drag it to move the whole line. **Point to point** still has dots you can drag, and you can add or remove points or bend a segment.
+* If you reshape a tab, slot or hole by hand, it becomes a plain cut shape, with a warning. Undo brings the last change back.
+
+☰ Menu › Export & share also has **📦 Send to Waylands Post (make the files)**. On this same phone or tablet it opens the design in [Waylands Post](https://warwicklewis1970-oss.github.io/waylands-post/). To send it to a laptop, still use **Save as Wayland design**.
+
+The usual **Share laser files**, **Save laser zip**, **SVG only** and **Export** buttons are unchanged. A saved copy of v5.8 stays at https://warwicklewis1970-oss.github.io/waylands-path/v5.8/.
+
+**Laser:** unchanged unless you use the new tools. Files you already have, and new exports of a design you do not edit, are byte-for-byte the same as v5.9.
+
 ## v5.9 - Wayland design file, and a saved copy of v5.8
 
 You can save a project as a **Wayland design** (`.wayland.json`) and open it in Wayland Forge, or later in a third app. **✏️ Send to Wayland Forge** hands it over on the same phone or tablet. To send it to a laptop, use **Save as Wayland design** and open the file there.

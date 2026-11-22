@@ -199,6 +199,15 @@ body.home #home{place-items:start center;overflow-y:auto}
 .kindseg button{flex:1;border:0;border-radius:0;min-height:48px;padding:6px 8px;font-size:16px;font-weight:800;letter-spacing:.04em;background:transparent;color:inherit}
 .kindseg button[data-kind="etch"].on{background:#1b1b1b;color:#fff}
 .kindseg button[data-kind="cut"].on{background:#e03131;color:#fff}
+.editbar{display:flex;align-items:center;gap:8px;padding:8px 10px 2px;background:var(--panel)}
+.editbar[hidden]{display:none!important}
+.editbar .editlbl{font-weight:800;font-size:13px;color:var(--dim);white-space:nowrap}
+.editbar .kindseg{margin:0;flex:1}
+.kindseg button[data-edit="etch"].on{background:#1b1b1b;color:#fff}
+.kindseg button[data-edit="cut"].on{background:#e03131;color:#fff}
+body.edit-cut #editBar .kindseg{border-color:#e03131}
+body.edit-etch #editBar .kindseg{border-color:#1b1b1b}
+
 .kindseg button.mix{opacity:.95}
 .kindseg[data-dim="1"]{opacity:.45;pointer-events:none}
 label.chk.tbfull, .hint.tbfull{grid-column:1/-1}
