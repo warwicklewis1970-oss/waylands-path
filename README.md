@@ -39,6 +39,15 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a red outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.9 - Wayland design file, and a saved copy of v5.8
+
+You can save a project as a **Wayland design** (`.wayland.json`) and open it in Wayland Forge, or later in a third app. **✏️ Send to Wayland Forge** hands it over on the same phone or tablet. To send it to a laptop, use **Save as Wayland design** and open the file there.
+
+* Menu › Export & share: **💾 Save as Wayland design** and **✏️ Send to Wayland Forge**. The usual **Share laser files**, **Save laser zip** and **SVG only** buttons are unchanged.
+* Menu › Project: the same **Save as Wayland design** button, and **📂 Open Wayland design**.
+* A saved copy of v5.8 stays at https://warwicklewis1970-oss.github.io/waylands-path/v5.8/ (and as a GitHub release zip) if you ever need to go back.
+* **No laser changes.** Files you already have, and new exports of the same design, are byte-for-byte the same as v5.8.
+
 ## v5.8 - Draw the cut, and Trace edge
 
 - **Cut out › ✏ Draw the cut** (the usual way): drag your finger around the area you want. The red line follows you, snaps to nearby lines if you leave Snap to lines ticked (about 1.5 mm, only where a line is close), and closes when you let go. Drag the white dots to adjust, then tap **✓ Make this a cut** or **✕ Cancel**. The cut is exactly the line you drew - the app no longer invents zig-zag joins between leftover bits.

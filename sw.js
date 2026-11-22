@@ -1,6 +1,6 @@
 // Waylands Path service worker: cache everything for offline use. Bump VERSION on every release.
-const VERSION = 'waylands-path-v5.8';
-const ASSETS = ['./', './index.html', './style.css', './manifest.webmanifest', './version.json', './js/bez.js', './js/trace.js', './js/svgin.js', './js/laser.js', './js/app.js', './js/tools2.js', './js/tools4.js', './js/hole.js', './js/tabs.js', './js/clone.js', './js/tarea.js', './js/worker.js', './js/sync.js',
+const VERSION = 'waylands-path-v5.9';
+const ASSETS = ['./', './index.html', './style.css', './manifest.webmanifest', './version.json', './js/wayland-design.js', './js/bez.js', './js/trace.js', './js/svgin.js', './js/laser.js', './js/app.js', './js/tools2.js', './js/tools4.js', './js/hole.js', './js/tabs.js', './js/clone.js', './js/tarea.js', './js/worker.js', './js/sync.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k.startsWith('waylands-path-')).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -8,6 +8,7 @@ self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(
 // Network first (so updates show straight away), cache as the offline fallback.
 self.addEventListener('fetch', e => { const req = e.request, u = new URL(req.url);
   if (req.method !== 'GET' || u.origin !== location.origin) return;
+  if (/\/v[\d.]+(\/|$)/.test(u.pathname)) return; // frozen fallback copies have their own service worker
   if (req.mode === 'navigate') caches.keys().then(keys => keys.filter(k => k !== VERSION && k.startsWith('waylands-path-')).forEach(k => caches.delete(k))); // tidy our own old caches (never Wayland Forge's - same website)
   e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; })
     .catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html')))); });

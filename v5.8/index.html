@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Waylands Path</title>
+<meta name="description" content="Turn a line drawing or messy SVG into clean laser lines and a cut line, fix them like Inkscape, and export LaserGRBL files.">
+<meta name="theme-color" content="#16232b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="home">
+<div id="fbBar" style="position:sticky;top:0;z-index:9999;background:#134e4a;color:#fff;padding:8px 12px;font:15px/1.35 system-ui,sans-serif;text-align:center;">Saved copy of <b>Waylands Path v5.8</b>. The latest app is <a href="https://warwicklewis1970-oss.github.io/waylands-path/" style="color:#fff;text-decoration:underline;">here</a>.</div>
+
+<div id="home">
+  <div class="hcard">
+    <img src="icons/icon.svg" alt="" class="hlogo">
+    <h1 class="htitle">Waylands Path</h1>
+    <div class="hsub">Line drawing, photo or SVG → clean laser lines</div>
+    <div class="hbtns">
+      <div id="ffWait" class="ffwait" hidden>✏️ A design from Wayland Forge is waiting: <b id="ffWaitName"></b><div class="ffrow"><button id="ffOpen" class="accent">Open it</button><button id="ffDrop">Not now</button></div></div>
+      <label class="hb primary filebtn">🖼️ Open line drawing or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
+      <label class="hb filebtn">📷 Turn a photo into a line drawing<small>pets, people, buildings, objects</small><input type="file" id="homePhoto" accept="image/*" hidden></label>
+      <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
+      <button id="homeHelp" class="hb">? How it works</button>
+    </div>
+    <div id="projBox">
+      <div class="ptitle">📁 My projects <span id="projCount"></span></div>
+      <div id="syncBox" class="syncbox"><div id="syncStatus" class="syncst"></div><div id="syncWho" class="syncwho"></div><div id="syncNote" class="syncnote" hidden></div>
+        <div class="syncbtns"><button id="syncConnect" class="gbtn"><span class="gG">G</span> Sign in with Google to sync</button><button id="syncNow" hidden>⟳ Sync now</button><button id="syncOut" hidden>Sign out</button></div></div>
+      <div id="projList"></div>
+    </div>
+    <div class="hver" id="homeVer"></div>
+  </div>
+</div>
+<div id="updBar" hidden><span id="updMsg">A new version is ready</span><button id="updBtn">⟳ Update now</button></div>
+<header>
+  <img src="icons/icon.svg" alt="" class="logo"><button id="homeBtn" title="Home (your work is kept)" aria-label="Home">⌂</button>
+  <h1>Waylands Path</h1><span id="verTag" class="vtag" title="App version"></span><button id="nameBtn" class="namebtn" title="Rename project">Untitled ✎</button>
+  <div class="spacer"></div>
+  <button id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="tl"> Undo</span></button>
+  <button id="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷<span class="tl"> Redo</span></button>
+  <button id="fitBtn" title="Fit the design on screen" aria-label="Fit view">⤢<span class="tl"> Fit</span></button>
+  <button id="exportTop" class="accent" title="Export laser files">📤<span class="tl2"> Export</span></button>
+  <button id="menuBtn" title="Menu: picture, trace, size, laser, sheet" aria-label="Menu">☰<span class="tl2"> Menu</span></button>
+  <button id="installBtn" class="accent" hidden title="Install as an app">⊕<span class="tl"> Install</span></button>
+  <button id="helpBtn" title="How it works" aria-label="Help">?</button>
+</header>
+<main>
+  <section id="stageWrap">
+    <canvas id="stage" aria-label="Design"></canvas><canvas id="ink" aria-hidden="true"></canvas>
+    <div id="stats" class="stats"></div>
+    <div id="cutLegend" class="cutleg" hidden><b class="cut">Red = CUT through</b> · <b class="etch">Black = ETCH</b></div>
+    <div id="busy" class="busy" hidden>Tracing…</div>
+    <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+    <button id="bgBtn" class="bgbtn" hidden aria-pressed="false" title="Faint photo behind the lines (screen only)">🖼 Photo</button>
+  </section>
+  <div id="toolDock">
+    <div id="tools" role="toolbar" aria-label="Tools">
+      <button data-tool="sel" class="tool" title="Tap a line to pick the whole line: delete, break, thickness, cut"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3 L19 12 L12.5 13.5 L16 20.5 L13.2 21.8 L9.8 14.8 L5 19 Z" fill="currentColor"/></svg><span>Select</span></button>
+      <button data-tool="p2p" class="tool" title="Tap point to point for straight lines; drag a line to bend it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19 L11 7 L20 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="4" cy="19" r="2.3" fill="currentColor"/><circle cx="11" cy="7" r="2.3" fill="currentColor"/><circle cx="20" cy="15" r="2.3" fill="currentColor"/></svg><span>Point to point</span></button>
+      <button data-tool="draw" class="tool" title="Draw a line with your finger"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18 C6 10, 9 20, 12 13 S18 6, 21 8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Draw</span></button>
+      <button data-tool="brk" class="tool" title="Tap two points: remove the bit between, or add a line across a gap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12 H9 M15 12 H21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 12 H15" stroke="currentColor" stroke-width="1.6" stroke-dasharray="1.6 2" fill="none"/><circle cx="9" cy="12" r="2.2" fill="currentColor"/><circle cx="15" cy="12" r="2.2" fill="currentColor"/></svg><span>Break</span></button>
+      <button data-tool="rub" class="tool" title="Rub lines out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 L20 10 L11 19 H6 L3 16 Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 9 L15 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M12 19 H21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Eraser</span></button>
+      <button data-tool="thick" class="tool" title="Make a line thicker or double"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7 H21" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3 12 H21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M3 18 H21" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg><span>Thickness</span></button>
+      <button data-tool="cutout" class="tool" title="Tap inside an area to cut it out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke="#9aa0a4" stroke-width="2.6" fill="none"/><rect x="8" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.2 1.8" fill="none"/></svg><span>Cut out</span></button>
+      <button data-tool="clear" class="tool" title="Tap areas (or drag a box), then clear every line inside"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6 L18 4 L20 17 L7 20 Z" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2" fill="none"/><path d="M9 10 L15 15 M15 10 L9 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Clear space</span></button>
+      <button data-tool="clone" class="tool" title="Clone: copy a line, shape, hole or a whole group (lasso / box), then size, turn and move it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.25"/></svg><span>Clone</span></button>
+      <button data-tool="edge" class="tool" title="Trace edge: draw a line alongside another, at a distance you set"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5 C8 4.5, 16 4.5, 20.5 17.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M5.2 19.2 C9 8.2, 15 8.2, 18.8 19.2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="2.4 2"/></svg><span>Trace edge</span></button>
+    </div>
+    <div id="toolOpts">
+      <div data-opts="move" class="topts">Pick a tool. With no tool picked, one finger moves the picture. Two fingers always move and zoom.</div>
+      <div data-opts="sel" class="topts t4p" hidden>
+        <div class="seg kindseg" id="slKind" hidden><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="t4b" id="slGapRow" hidden><button id="slClose" class="accent grow">✓ Close the gap</button></div>
+        <div class="t4h" id="t4slHint"></div>
+        <div class="t4b acts" id="t4slActs"><button id="t4slDel" class="danger">🗑 Delete line</button><button id="t4slBrkB">✂ Break</button><button id="t4slTh">≡ Thickness</button></div>
+        <div class="t4b" id="t4slBrk" hidden><button id="t4slNo">✕ Cancel</button><button id="t4slOk" class="accent">✓ Confirm break</button></div></div>
+      <div data-opts="p2p" class="topts t4p" hidden>
+        <div class="seg kindseg" id="ppKind"><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="t4h" id="t4ppHint"></div><div class="t4b"><button id="t4ppUndo">↶ Undo</button><button id="t4ppDone" class="accent">✓ Done</button></div></div>
+      <div data-opts="draw" class="topts t4p" hidden>
+        <div class="seg kindseg" id="drKind"><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="t4h">Draw with one finger. The line is smoothed and its ends snap onto nearby lines. Two fingers move the picture. Pick <b>ETCH</b> or <b>CUT</b> before you draw.</div><div class="t4b"><button id="t4drUndo" class="big2">↶ Undo</button></div></div>
+      <div data-opts="brk" class="topts t4p" hidden><div class="t4b brmode"><button data-brmode="del" aria-pressed="true">✂ Remove a section</button><button data-brmode="add" aria-pressed="false">＋ Add a line</button></div><div class="t4h" id="t4brHint"></div><div class="t4b"><button id="t4brNo">✕ Cancel</button><button id="t4brOk" class="accent">✓ Confirm</button></div></div>
+      <div data-opts="rub" class="topts t4p" hidden><div class="t4h">Rub over lines to erase. Tap a line to remove it up to the next junction.</div>
+        <label class="rg"><span>Brush size</span><input type="range" id="t4rb" min="8" max="70" step="1" value="22"><output id="t4rbOut"></output></label>
+        <div class="t4b"><div class="seg"><button data-rbmode="all" class="on">Everything</button><button data-rbmode="dbl">Doubled lines only</button></div><button id="t4rbUndo" class="big2">↶ Undo</button></div></div>
+      <div data-opts="thick" class="topts t4p" hidden><div class="t4h" id="t4thHint"></div>
+        <label class="rg"><span>Thickness</span><input type="range" id="t4w" min="0.3" max="3" step="0.05" value="0.3"><input type="number" id="t4wn" class="num" inputmode="decimal" min="0" max="10" step="0.05" value="0.3"><span class="u">mm</span></label>
+        <div class="t4b"><label class="chk"><input type="checkbox" id="t4dbl">Double line</label><span id="t4ddRow" class="stepper" hidden><span class="lbl2">Distance between lines</span><button id="t4ddM" aria-label="Less">−</button><input type="number" id="t4dd" class="num" inputmode="decimal" min="0.01" max="20" step="0.01" value="0.50"><button id="t4ddP" aria-label="More">+</button><span class="u">mm</span></span><button id="t4thAll">Apply to all lines</button></div></div>
+      <div data-opts="cutout" class="topts t4p" hidden>
+        <div class="seg wide3" id="coMode"><button type="button" data-comode="draw" class="on">✏ Draw the cut</button><button type="button" data-comode="tap">👆 Tap an area</button><button type="button" data-comode="lasso">➰ Lasso</button></div>
+        <label class="chk" id="coSnapL"><input type="checkbox" id="coSnap" checked> Snap to lines</label>
+        <div class="t4h" id="t4coHint"></div>
+        <div class="t4b"><button id="t4coGo" class="accent big2">✓ Make this a cut</button><button id="t4coAgain" hidden>✏ Draw again</button><button id="t4coNo">✕ Cancel</button><button id="t4coEtch" hidden>Make etch line</button><button id="t4coOut">Outer cut…</button></div></div>
+      <div data-opts="clear" class="topts t4p" hidden><div class="seg clseg"><button data-clmode="area" class="on">👆 Tap areas</button><button data-clmode="poly">📍 Points (advanced)</button></div><div class="t4h" id="t4clHint"></div><label class="clgrow"><input type="checkbox" id="t4clGrow"> Include border lines (e.g. the window frame)</label><div class="t4b"><button id="t4clNo">✕ Unselect all</button><button id="t4clBack">↶ Last point</button><button id="t4clGo" class="danger big2">🧹 Clear</button></div></div>
+      <div data-opts="tarea" class="topts t4p" id="taBox" hidden>
+        <div class="seg wide3" id="taMode"><button data-tamode="lasso">➰ Lasso</button><button data-tamode="box">⬚ Box</button></div>
+        <div class="t4h" id="taHint"></div>
+        <div id="taCtl">
+          <label class="rg"><span>Detail</span><input type="range" id="taDetail" min="1" max="10" step="1" value="8"><output id="taDetailOut">8</output></label>
+          <label class="rg"><span>Smoothness</span><input type="range" id="taSmooth" min="0" max="10" step="1" value="3"><output id="taSmoothOut">3</output></label>
+          <label class="rg"><span>Ignore small bits</span><input type="range" id="taMin" min="0" max="10" step="1" value="2"><output id="taMinOut">2</output></label>
+          <div class="seg wide3" id="taPut"><button data-taput="replace">♻ Replace lines inside</button><button data-taput="add">＋ Add to the lines</button></div>
+        </div>
+        <div class="cnacts taacts"><button id="taApply" class="accent">✓ Use these lines</button><button id="taAgain">➰ Draw again</button><button id="taReset">↺ Area defaults</button><button id="taDone">✕ Close</button></div>
+      </div>
+      <div data-opts="clone" class="topts t4p" id="cnBox" hidden>
+        <div class="seg wide3" id="cnMode"><button data-cnmode="tap">👆 Tap one</button><button data-cnmode="lasso">➰ Lasso</button><button data-cnmode="box">⬚ Box</button><button id="cnAll">▣ All</button></div>
+        <div class="cnsel" id="cnTrimL"><label class="chk"><input type="checkbox" id="cnTrim"> Trim lines at the edge (cut them at the loop)</label></div>
+        <div class="t4h" id="cnHint"></div>
+        <div class="cnareaacts" id="cnAreaActs" hidden><button id="cnAreaGo" class="accent">+ Clone this area</button><button id="cnAreaAgain">➰ Draw again</button><button id="cnAreaCancel">✕ Cancel</button></div>
+        <div class="cnacts"><button id="cnGo" class="accent">+ Clone</button><button id="cnReset">↺ Reset to original</button><button id="cnDel" class="danger">🗑 Delete copy</button><button id="cnDone">✓ Done</button></div>
+        <div id="cnRecent" hidden><div class="cnrech">Recent clones - tap one to place a copy</div><div id="cnRecentRow" class="cnrecrow"></div></div>
+        <div id="cnEdit" hidden>
+          <div class="seg kindseg" id="cnKind"><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+          <div class="cnrow"><label>Width mm<input type="number" id="cnW" inputmode="decimal" min="0.1" step="0.1"></label><label>Height mm<input type="number" id="cnH" inputmode="decimal" min="0.1" step="0.1"></label><label class="chk cnlock"><input type="checkbox" id="cnLock">Keep shape</label></div>
+          <div class="cnrow"><label>Size %<input type="number" id="cnPct" inputmode="decimal" min="1" max="5000" step="1"></label><label>Turn °<input type="number" id="cnRot" inputmode="decimal" min="-360" max="360" step="1"></label><button id="cnRm" aria-label="Turn 15 degrees left">⟲15°</button><button id="cnRp" aria-label="Turn 15 degrees right">⟳15°</button><button id="cnR90" aria-label="Turn 90 degrees">90°</button></div>
+          <div class="cnrow cnflip"><button id="cnFH" title="Mirror it left to right">↔ Flip horizontal</button><button id="cnFV" title="Mirror it top to bottom">↕ Flip vertical</button></div>
+          <div class="nudge cnnudge"><span class="lbl2">Move</span><button data-cnnudge="-1,0" aria-label="Move left">◀</button><button data-cnnudge="0,-1" aria-label="Move up">▲</button><button data-cnnudge="0,1" aria-label="Move down">▼</button><button data-cnnudge="1,0" aria-label="Move right">▶</button><select id="cnStep" aria-label="Move step"><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="5">5 mm</option><option value="10">10 mm</option></select></div>
+        </div>
+      </div>
+      <div data-opts="edge" class="topts t4p" hidden>
+        <div class="stepper" id="teDistRow"><span class="lbl2">Distance</span><button type="button" id="teMmM" aria-label="Less">−</button><input type="number" id="teMm" class="num" inputmode="decimal" min="0.1" max="50" step="0.1" value="2"><button type="button" id="teMmP" aria-label="More">+</button><span class="u">mm</span></div>
+        <div class="t4h" id="teHint"></div>
+        <div class="t4b" id="teWay" hidden><button type="button" data-teway="short">Shorter way</button><button type="button" data-teway="long">Longer way</button><button type="button" data-teway="whole">Whole loop</button></div>
+        <div class="seg kindseg" id="teKind"><button type="button" data-kind="etch" class="on">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <div class="t4b"><button type="button" id="teSwap">⇄ Swap side</button><button type="button" id="teNo">✕ Cancel</button><button type="button" id="teGo" class="accent big2">✓ Add this line</button></div>
+      </div>
+      <div data-opts="nodes" class="topts nopts" hidden>
+        <div class="selinfo" id="selInfo">Tap a line to show its points</div>
+        <div class="nbtns">
+          <button id="nCorner" data-needsel title="Sharp corner point">◆<span>Sharp</span></button>
+          <button id="nSmooth" data-needsel title="Smooth point">●<span>Smooth</span></button>
+          <button id="nLine" data-needsel title="Make the piece straight">／<span>Straight</span></button>
+          <button id="nCurve" data-needsel title="Make the piece a curve">◠<span>Curve</span></button>
+          <button id="nAdd" data-needsel title="Add a point">＋<span>Point</span></button>
+          <button id="nDel" data-needsel title="Delete point (shape kept)">−<span>Point</span></button>
+          <button id="nBreak" data-needsel title="Break the line at the point">✂<span>Break</span></button>
+          <button id="nJoin" data-needsel title="Join two ends (or run one end on to the next line)">⊶<span>Join</span></button>
+          <button id="nSeg" data-needsel class="danger" title="Delete the piece between two picked points">✕<span>Piece</span></button>
+          </div>
+          <div class="seg kindseg" id="nKind"><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
+        <details class="more"><summary>More</summary>
+          <div class="nudge"><button data-nudge="-1,0" aria-label="Nudge left">◀</button><button data-nudge="0,-1" aria-label="Nudge up">▲</button><button data-nudge="0,1" aria-label="Nudge down">▼</button><button data-nudge="1,0" aria-label="Nudge right">▶</button>
+            <select id="nudgeMm" aria-label="Nudge step"><option value="0.1">0.1 mm</option><option value="0.5" selected>0.5 mm</option><option value="1">1 mm</option></select></div>
+          <div class="row"><button id="nStraight" class="grow" title="Straight, and level/upright if nearly so">⟂ Straighten level / upright</button><button id="nAll" class="grow">Pick whole line</button></div>
+        </details>
+      </div>
+      <div data-opts="pen" class="topts" hidden><span class="tip">Tap for a sharp point · press and drag for a curve · tap the first point to close. Snaps to points and lines.</span><button id="penBack">↶ Last point</button><button id="penDone" class="accent">✓ Done</button></div>
+      <div data-opts="erase" class="topts" hidden>
+        <div class="seg"><button id="delStretch" class="on">To the junctions</button><button id="delWhole">Whole line</button></div>
+        <span class="tip" id="delTip">Tap a line: it is removed up to the junction each side.</span>
+      </div>
+      <div data-opts="line" class="topts gopts" hidden>
+        <div class="seg"><button id="lnNew" class="on">New line</button><button id="lnBrk">Break a line</button></div>
+        <div class="hintbar" id="lnHint"></div>
+        <div class="gbtns" id="lnBtns"></div>
+        <details class="more"><summary>More</summary>
+          <label class="chk"><input type="checkbox" id="lnEdge">Break ends stop exactly on a line or shape inside the gap</label>
+          <div class="row"><button id="lnOldSkip" class="grow">Old Skip over / Continue across tool</button></div>
+        </details>
+      </div>
+      <div data-opts="shapes" class="topts gopts" hidden>
+        <div class="hintbar" id="shHint"></div>
+        <div class="shapes">
+          <button data-shape="ellipse" title="Circle or ellipse"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="6.5" fill="currentColor"/></svg><span>Ellipse</span></button>
+          <button data-shape="p3" title="Triangle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,3 21.5,20 2.5,20" fill="currentColor"/></svg><span>Triangle</span></button>
+          <button data-shape="p4" title="Square or rectangle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg><span>Square</span></button>
+          <button data-shape="p5" title="Pentagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12.0,2.0 21.5,8.9 17.9,20.1 6.1,20.1 2.5,8.9" fill="currentColor"/></svg><span>5 sides</span></button>
+          <button data-shape="p6" title="Hexagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="17.0,3.3 22.0,12.0 17.0,20.7 7.0,20.7 2.0,12.0 7.0,3.3" fill="currentColor"/></svg><span>6 sides</span></button>
+          <button data-shape="p8" title="Octagon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="15.8,2.8 21.2,8.2 21.2,15.8 15.8,21.2 8.2,21.2 2.8,15.8 2.8,8.2 8.2,2.8" fill="currentColor"/></svg><span>8 sides</span></button>
+          <button data-shape="star" title="Star"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12.0,2.0 14.5,8.6 21.5,8.9 16.0,13.3 17.9,20.1 12.0,16.2 6.1,20.1 8.0,13.3 2.5,8.9 9.5,8.6" fill="currentColor"/></svg><span>Star</span></button>
+          <button data-hole="1" class="hhbtn" title="Hanging hole: an exact round hole, size typed in mm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg><span>Hanging hole</span></button>
+          <button data-tabs="1" class="hhbtn" title="Tabs and slots, with kerf and crush bumps"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v11h-4v5h-4v-5h-4v5H6v-5H2z" fill="currentColor"/></svg><span>Tabs &amp; slots</span></button>
+        </div>
+        <div id="tbBox" class="tbbox">
+          <div class="hintbar" id="tbHint"></div>
+          <div class="hint" id="tbBodyInfo"></div>
+          <div class="lbl">Put the tabs on this edge</div>
+          <div class="seg wide4" id="tbEdge">
+            <button type="button" data-tbedge="bottom">Bottom</button>
+            <button type="button" data-tbedge="top">Top</button>
+            <button type="button" data-tbedge="left">Left</button>
+            <button type="button" data-tbedge="right">Right</button>
+          </div>
+          <div class="tbgrid">
+            <label>Tab width <span><input type="number" id="tbW" inputmode="decimal" min="1" max="200" step="0.1"> mm</span></label>
+            <label>Tab depth <span><input type="number" id="tbP" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
+            <label>Number of tabs <span><input type="number" id="tbN" inputmode="numeric" min="1" max="10" step="1"></span></label>
+            <label>Gap between tabs <span><input type="number" id="tbG" inputmode="decimal" min="0" max="500" step="0.5"> mm</span></label>
+            <label class="chk tbfull"><input type="checkbox" id="tbBump">Bumps on tabs</label>
+            <label class="chk tbfull"><input type="checkbox" id="tbSlotBump">Bumps on slots</label>
+            <div class="hint tbfull" id="tbBumpNote">Bumps on both tabs and slots together make the fit tighter (they squeeze from both sides).</div>
+            <label>Bump size <span><input type="number" id="tbBh" inputmode="decimal" min="0" max="2" step="0.01"> mm</span></label>
+            <label>Bump width <span><input type="number" id="tbBw" inputmode="decimal" min="0.1" max="10" step="0.1"> mm</span></label>
+            <label>Bump every <span><input type="number" id="tbBsp" inputmode="decimal" min="1" max="50" step="0.5"> mm</span></label>
+            <label>Plywood thickness <span><input type="number" id="tbTh" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
+            <label>Kerf <span><input type="number" id="tbKerf" inputmode="decimal" min="0" max="1" step="0.01"> mm</span></label>
+            <label>Slot width <span><input type="number" id="tbSW" inputmode="decimal" min="0.5" max="200" step="0.1"> mm</span></label>
+            <label>Slot height <span><input type="number" id="tbSH" inputmode="decimal" min="0.5" max="50" step="0.1"> mm</span></label>
+            <label>Body height <span><input type="number" id="tbBody" inputmode="decimal" min="5" max="2000" step="0.5"> mm</span></label>
+            <button id="tbSetBody">↕ Set body height</button>
+          </div>
+          <div class="hint" id="tbKerfHint"></div>
+          <div class="row"><button id="tbStd" class="accent grow">▭ Standard tabs</button></div>
+          <div class="row"><button id="tbAddSlot" class="grow">▭ Add a slot</button><button id="tbRotSlot">↻ Turn slot 90°</button></div>
+          <div class="hint">Sizes are remembered for your next projects. Tabs are part of the outside cut (cut last). Slots are cut first, with any holes, using your cut settings.</div>
+          <div class="gbtns"><button id="tbReset">↺ Reset to defaults</button><button id="tbDel">🗑 Remove all tabs</button><button id="tbDone" class="accent">✓ Done</button></div>
+        </div>
+        <div id="hhBox" class="hhbox">
+          <div class="hintbar" id="hhHint"></div>
+          <div class="row hhrow"><label class="hhd">Hole Ø <input type="number" id="hhD" inputmode="decimal" min="0.5" max="50" step="0.1" value="4"> mm</label><label class="hhk">Kerf <input type="number" id="hhK" inputmode="decimal" min="0" max="1" step="0.01" value="0"> mm</label></div>
+          <div class="hint" id="hhNote"></div>
+          <div class="row"><button id="hhTop" class="accent grow">⤒ Centre at top</button><label class="hhk">leaving <input type="number" id="hhGap" inputmode="decimal" min="0" max="50" step="0.5" value="3"> mm of wood above</label></div>
+          <label class="chk"><input type="checkbox" id="hhCut" checked>Cut it out (red) - untick to etch a ring instead</label>
+          <div class="hint">The size you type is remembered for your next projects. Holes are cut first, before the outside, with your cut passes.</div>
+          <div class="gbtns"><button id="hhDel">🗑 Remove hole</button><button id="hhDone" class="accent">✓ Done</button></div>
+        </div>
+        <div class="shnorm"><div class="row"><label class="sides">Sides / points <input type="number" id="shSides" min="3" max="12" step="1" value="6" inputmode="numeric"></label><label class="chk"><input type="checkbox" id="shEven">Keep it even (circle / regular)</label></div>
+        <label class="chk big"><input type="checkbox" id="shTrimOn">Cut-off line (straight edge)</label>
+        <div id="shTrimBox" hidden>
+          <div class="row"><button data-shtrim="bottom" class="grow">Flat bottom</button><button data-shtrim="top" class="grow">Flat top</button><button data-shtrim="left" class="grow">Flat left</button><button data-shtrim="right" class="grow">Flat right</button></div>
+          <label class="rg"><span>Angle</span><input type="range" id="shAng" min="-180" max="180" step="1" value="0"><output id="shAngOut">0°</output></label>
+          <label class="rg"><span>Position</span><input type="range" id="shPos" min="-95" max="95" step="1" value="0"><output id="shPosOut">0%</output></label>
+          <div class="row"><button id="shFlip" class="grow">⇅ Keep the other side</button><label class="chk"><input type="checkbox" id="shOpen">Curve only (no straight edge)</label></div>
+          <div class="hint">Or drag the red dots on the shape: one moves the cut-off line, the other turns it. 0% = through the middle (a half circle).</div>
+        </div>
+        <label class="chk"><input type="checkbox" id="shCut">Use as a cut outline (red) instead of an etch line</label>
+        <div class="gbtns"><button id="shCancel">✕ Cancel</button><button id="shDone" class="accent">✓ Done</button></div></div>
+      </div>
+      <div data-opts="skip" class="topts" hidden>
+        <div class="seg"><button id="skipSkip" class="on">Skip over</button><button id="skipCont">Continue across</button></div>
+        <span class="tip" id="skipTip"></span>
+      </div>
+    </div>
+  </div>
+  <div id="menuBack"></div>
+  <aside id="panel">
+    <div class="menuhead"><b>☰ Menu</b><button id="addShape">⬡ Add shape</button><button id="menuClose" aria-label="Close menu">✕</button></div>
+    <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
+      <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <div class="row"><label class="filebtn grow">📷 Turn a photo into a line drawing<input type="file" id="panelPhoto" accept="image/*" hidden></label></div>
+      <div class="row"><label class="filebtn grow">➕ Add another line drawing<input type="file" id="overlayLine" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <div class="row"><label class="filebtn grow">➕ Add another photo<input type="file" id="overlayPhoto" accept="image/*" hidden></label></div>
+      <label class="chk"><input type="checkbox" id="ovClip">Only keep the new lines that sit inside the red outside cut</label>
+      <div class="hint">The new picture is placed on top as a group you can move, size, turn or flip, then tap ✓ Done. Undo takes it off. This does not start a new project.</div>
+      <label class="chk"><input type="checkbox" id="showPhoto">Show the picture faintly behind the lines</label>
+      <label class="rg"><span>How faint</span><input type="range" id="photoOp" min="5" max="80" step="5" value="25"><output id="photoOpOut">25%</output></label>
+      <div class="hint">Only on this screen - the picture is never burnt or put in the laser files. The 🖼 Photo button on the drawing turns it on and off.</div>
+      <div class="hint" id="srcInfo">No picture yet.</div>
+      <div class="hint">Line drawings: AI line art, logos, colouring-page pictures. Photos: use 📷 - it finds the main edges and makes them into lines.</div>
+    </div></details>
+    <details name="acc" id="sec-trace"><summary>2 · Trace</summary><div class="body">
+      <div class="lbl">The picture is</div>
+      <div class="seg wide3" id="tkind"><button data-tkind="line">✏️ A line drawing</button><button data-tkind="photo">📷 A photo</button></div>
+      <div id="photoCtl" hidden>
+        <label class="rg"><span>Detail</span><input type="range" id="phDetail" min="1" max="10" step="1" value="6"><output id="phDetailOut">6</output></label>
+        <label class="rg"><span>Smoothness</span><input type="range" id="phSmooth" min="0" max="10" step="1" value="4"><output id="phSmoothOut">4</output></label>
+        <label class="rg"><span>Ignore small bits</span><input type="range" id="phMin" min="0" max="10" step="1" value="3"><output id="phMinOut">3</output></label>
+        <div class="hint">Detail: more or fewer lines. Smoothness: higher = calmer, rounder lines and less fur / skin texture. Ignore small bits: higher drops short dashes. The drawing updates as you slide.</div>
+        <div class="row"><button id="phReset" class="grow">↺ Reset to defaults</button></div>
+        <div class="row"><button id="taOpen" class="grow accent">🔍 Trace an area in more detail</button></div>
+        <div class="hint">Draw round one part (a face, the eyes…) and only that part is traced again with more lines and points.</div>
+      </div>
+      <div id="lineCtl">
+      <div class="lbl">The drawing is</div>
+      <div class="seg wide3" id="tmode"><button data-tmode="normal">Dark lines on light paper</button><button data-tmode="light">Light lines on dark</button><button data-tmode="auto">Auto</button></div>
+      <label class="rg"><span>Remove faint lines</span><input type="range" id="faint" min="0" max="10" step="1" value="4"><output id="faintOut">4</output></label>
+      <div class="hint">Raise it if ruled paper lines, shadows or smudges get traced. Lower it if faint parts of your drawing go missing.</div>
+      <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
+      <label class="rg"><span>Corners</span><input type="range" id="corners" min="1" max="10" step="1" value="5"><output id="cornersOut">5</output></label>
+      <div class="hint">Detail: higher keeps short bits, lower clears specks. Corners: higher finds more sharp corners.</div>
+      </div>
+      <div class="hint" id="traceInfo"></div>
+      <details class="adv"><summary>Advanced</summary>
+        <label class="chk"><input type="checkbox" id="straighten" checked>Make nearly level / upright lines exactly straight</label>
+        <div class="row"><button id="retraceBtn" class="grow">↻ Trace again</button></div>
+      </details>
+      <div class="hint">Moving these re-traces the picture and replaces your edits (Undo brings them back).</div>
+    </div></details>
+    <details name="acc" id="sec-tidy"><summary>3 · Tidy up</summary><div class="body">
+      <div class="hint" id="tidyCount"></div>
+      <div class="row"><label class="grow"><span>Close gaps up to</span><input type="number" id="gapMm" inputmode="decimal" min="0.1" max="20" step="any" value="1.5"><span>mm</span></label><button id="gapBtn" class="accent">🔗 Close gaps</button></div>
+      <div class="row"><button id="overlapBtn" class="grow">⧉ Remove doubled-up lines</button></div>
+      <div class="row"><label class="grow"><span>Stray bits under</span><input type="number" id="shortMm" inputmode="decimal" min="0.1" max="100" step="any" value="2"><span>mm</span></label><button id="shortBtn">🧹 Remove</button></div>
+    </div></details>
+    <details name="acc" id="sec-size"><summary>4 · Size &amp; cut</summary><div class="body">
+      <div class="g2">
+        <label><span>Width (mm)</span><input type="number" id="widthMm" inputmode="decimal" min="5" max="2000" step="any" value="150"></label>
+        <label><span>Height</span><output id="heightOut">–</output></label>
+        <label><span>Line width (mm)</span><input type="number" id="lineMm" inputmode="decimal" min="0.05" max="5" step="any" value="0.3"></label>
+      </div>
+      <div class="hint">Width is the whole finished piece, cut line included. Height follows.</div>
+      <label class="chk big"><input type="checkbox" id="cutOn" checked>Cut out along the red line</label>
+      <div class="hint" id="cutInfo"></div>
+      <div class="lbl">Outer cut line</div>
+        <div class="row"><label class="grow"><span>Outline gap</span><input type="number" id="cutOff" inputmode="decimal" min="0" max="50" step="any" value="0.5"><span>mm</span></label></div>
+        <label class="rg"><span>Tightness</span><input type="range" id="cutTight" min="1" max="10" step="1" value="8"><output id="cutTightOut">8</output></label>
+        <div class="row"><button id="makeCutBtn" class="grow">↻ Make outer cut line</button></div>
+        <div class="hint">Makes a new red line round all the lines: <b>Outline gap</b> = how far outside the lines (0–1 mm hugs them). <b>Tightness</b> 10 follows into every pocket, 1 gives a smooth outline. Holes you made are kept. Drag it with the Cut out tool to fine-tune.</div>
+    </div></details>
+    <details name="acc" id="sec-laser"><summary>5 · Laser steps</summary><div class="body">
+      <div class="hint">Power, speed and passes for each step are set in the <b>Burn settings</b> sheet - the same one Export opens.</div>
+      <div class="row"><button id="lzOpenMenu" class="accent grow">🔥 Burn settings…</button></div>
+    </div></details>
+    <details name="acc" id="sec-sheet"><summary>6 · Sheet (blank &amp; copies)</summary><div class="body">
+      <label class="chk big"><input type="checkbox" id="shOn">Place on a blank</label>
+      <div id="shBody">
+        <div class="g2">
+          <label><span>Blank width (mm)</span><input type="number" id="shW" inputmode="decimal" min="10" max="2000" step="any" value="200"></label>
+          <label><span>Blank height (mm)</span><input type="number" id="shH" inputmode="decimal" min="10" max="2000" step="any" value="200"></label>
+          <label><span>Margin (mm)</span><input type="number" id="shM" inputmode="decimal" min="0" max="200" step="any" value="5"></label>
+          <label><span>Gap between copies (mm)</span><input type="number" id="shGap" inputmode="decimal" min="0" max="200" step="any" value="5"></label>
+          <label><span>Copies across</span><input type="number" id="shNx" inputmode="numeric" min="1" max="50" step="1" value="1"></label>
+          <label><span>Copies down</span><input type="number" id="shNy" inputmode="numeric" min="1" max="50" step="1" value="1"></label>
+        </div>
+        <div class="seg wide2" id="shPlace"><button data-place="centre" class="on">Centre on blank</button><button data-place="margin">Bottom-left at margin</button></div>
+        <div class="row"><button id="shFit" class="grow">▦ Fit as many as possible</button></div>
+        <canvas id="shPrev" class="shprev" width="600" height="600" aria-label="Blank preview"></canvas>
+        <div class="hint" id="shInfo"></div>
+      </div>
+      <div id="shOff"><label class="brdrow">Border <span><input type="number" id="brdIn" class="brdin" inputmode="decimal" min="0" max="100" step="0.5"> mm</span></label><div class="hint brdhint"></div></div>
+    </div></details>
+    <details name="acc" id="sec-export"><summary>7 · Export &amp; share</summary><div class="body">
+      <div class="hint" id="exSummary"></div>
+      <div class="row"><button id="shareBtn" class="accent grow big2">📤 Share laser files</button></div>
+      <div class="row"><button id="saveZipBtn" class="grow">💾 Save laser zip</button><button id="svgBtn" class="grow">⬇ SVG only</button></div>
+      <div id="exOut" class="exout"></div>
+    </div></details>
+    <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
+      <div class="hint">Your work saves on this device by itself. Open the app again and tap Resume.</div>
+      <div class="row"><button id="newBtn" class="grow">✚ New project (open another picture)</button></div>
+      <div class="hint" id="saveInfo"></div><div class="hint" id="syncEd"></div>
+      <div class="hint small">Waylands Path <span id="verOut"></span> · works offline · sister app to Wayland Forge</div>
+    </div></details>
+  </aside>
+</main>
+<div id="help" hidden><div class="hcard2"><div id="helpStep"></div><div class="row"><button id="helpSkip">Close</button><div class="grow"></div><button id="helpBack">‹ Back</button><button id="helpNext" class="accent">Next ›</button></div></div></div>
+<div id="toast" hidden></div>
+<dialog id="ffDlg" class="lzdlg"><h3>✏️ From Wayland Forge</h3><div id="ffNote" class="ffnote"></div><div class="lzbbtn"><button id="ffOk" class="accent">OK</button></div></dialog>
+<dialog id="lzDlg" class="lzdlg"><h3>Burn settings</h3>
+  <div class="hint" id="lzWhat"></div>
+  <div id="lzBurn" class="lzburn"><div class="hint">Tap a step to open it. Each step has its own settings. Power is % of your laser max S, speed in mm/min.</div><div id="lzSteps"></div></div>
+  <details class="lzacc lzmore"><summary><span class="lzst">More laser settings</span> <span class="lzsum" id="lzMoreSum"></span></summary><div class="lzcb">
+    <label>Laser max S ($30) <input type="number" id="smax" inputmode="numeric" value="1000" min="1" max="100000" step="1"></label>
+    <label class="full"><span class="hint" id="lzSheetInfo"></span></label>
+    <label class="full brdrow" id="lzBrdRow">Border (no blank) <span><input type="number" id="lzBrd" class="brdin" inputmode="decimal" min="0" max="100" step="0.5"> mm</span></label>
+    <label class="full"><span class="hint brdhint"></span></label>
+    <div class="full lzrow"><button id="lzSheetBtn">▦ Blank &amp; copies…</button><button id="burnReset">↺ Reset to defaults</button></div>
+    <label class="full"><span class="hint">Defaults: Etch lines Vector 25% at 3000 mm/min. Cut Vector 100% at 1000 mm/min, 3 passes, each cut line gets all its passes, holes first. Your changes are kept on this device.</span></label></div></details>
+  <label class="lzhow">Save as <select id="lzHow"><option value="zip">One .zip (Windows: right-click › Extract All)</option><option value="files">Separate files</option><option value="share">Share (send to laptop, Drive…)</option><option value="svg">SVG artwork only</option></select></label>
+  <div class="lzbbtn"><button id="lzDlgCancel">Cancel</button><button id="lzDlgGo" class="accent">Export</button></div></dialog>
+<script src="js/bez.js"></script>
+<script src="js/trace.js"></script>
+<script src="js/svgin.js"></script>
+<script src="js/laser.js"></script>
+<script src="js/app.js"></script>
+<script src="js/tools2.js"></script>
+<script src="js/tools4.js"></script>
+<script src="js/hole.js"></script>
+<script src="js/tabs.js"></script>
+<script src="js/clone.js"></script>
+<script src="js/tarea.js"></script>
+<script src="js/sync.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.8';
+const APP_VERSION = 'v5.9';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -160,7 +160,12 @@ async function retrace(record = true) { if (!srcImg) return; const seq = ++trace
   photoBgUI(); changed(); if (!S.noAutoCut && S.trace.kind !== 'photo' && !hasOuterCut() && etch().length) makeCut(true); }
 function traceSoon() { clearTimeout(traceT); traceT = setTimeout(() => retrace(true), 160); }
 // ---------- opening files ----------
-async function openFile(file, kind = 'line') { if (!file) return; const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name), name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled';
+async function openFile(file, kind = 'line') { if (!file) return;
+  if (/\.wayland\.json$/i.test(file.name) || (/\.json$/i.test(file.name) && file.type !== 'image/svg+xml')) {
+    try { const j = WD.parse(await file.text()); await openWaylandDesign(j); return; }
+    catch (err) { if (/\.wayland\.json$/i.test(file.name) || (err && /Not a Wayland/.test(String(err.message||err)))) { toast('Could not open that Wayland design: ' + (err.message || err), 4000); return; } }
+  }
+  const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name), name = file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled';
   try { if (isSvg) { const r = SVGIN.importSVG(await file.text()); startProject(name); S.src = { kind: 'svg', w: r.w, h: r.h }; $('sec-trace').hidden = true; srcImg = null; srcEl = null; S.paths = r.paths; S.cutOn = false;
       const sk = []; if (r.info.skippedWhite) sk.push(`${r.info.skippedWhite} white background shape${r.info.skippedWhite > 1 ? 's' : ''}`); if (r.info.skippedText) sk.push(`${r.info.skippedText} text item(s) (convert text to paths first)`); if (r.info.skippedUse) sk.push(`${r.info.skippedUse} linked symbol(s)`);
       $('srcInfo').innerHTML = `SVG: ${r.paths.length} lines from ${r.info.shapes} shapes, curves kept.${sk.length ? `<br><span class="warn">Skipped ${sk.join(', ')}.</span>` : ''}`;
@@ -567,6 +572,8 @@ async function saveZip() { let o; try { o = buildOut(); } catch (e) { toast(e.me
   download(blob, o.zipName); listFiles(o, `${o.zipName} is in your Downloads folder. Right-click › Extract All, then open the .nc files in LaserGRBL. Inside:`); }
 function saveSvg() { let o; try { o = buildOut(); } catch (e) { toast(e.message); return; } download(new Blob([o.svgAll], { type: 'image/svg+xml' }), o.svgName); $('exOut').innerHTML = `<div class="ok">${esc(o.svgName)} saved to Downloads (${f1(o.fr.W)} × ${f1(o.fr.H)} mm).</div>`; }
 $('shareBtn').onclick = shareFiles; $('saveZipBtn').onclick = saveZip; $('svgBtn').onclick = saveSvg;
+  const wdSave = () => saveWaylandDesign(); if ($('wdSave')) $('wdSave').onclick = wdSave; if ($('wdSave2')) $('wdSave2').onclick = wdSave; if ($('wdToForge')) $('wdToForge').onclick = sendToForge;
+  if ($('wdOpen')) $('wdOpen').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) openFile(f); });
 // v4.5 Export = the Burn settings sheet, like Wayland Forge: one section per step (Mode / Power / Speed / Passes), then Export
 async function saveSeparate() { let o; try { o = buildOut(); } catch (e) { toast(e.message); return; } for (const f of o.files) { download(new Blob([f.data], { type: mimeOf(f.name) }), f.name); await new Promise(r => setTimeout(r, 900)); }
   listFiles(o, `${o.files.length} files saved to your Downloads folder. If the browser asks to allow multiple downloads, tap Allow.`); }
@@ -619,7 +626,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Draw the cut, and Trace edge — a parallel line at a set distance'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: Save as Wayland design, Send to Wayland Forge, and a saved v5.8 copy if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
@@ -647,10 +654,37 @@ window.addEventListener('resize', () => resize()); new ResizeObserver(() => resi
 window.addEventListener('pagehide', () => { saveNow(); }); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow().then(() => { if (window.PJ) PJ.background(); }); });
 // ---------- v4.6: a design sent from Wayland Forge (✏️ Send to Waylands Path). Forge leaves an SVG in true mm in storage both apps share
 // (same website); it opens here as a new project with letters as outlines and Forge's cut lines as cuts. Laser export code is unchanged.
+
+// ---------- v5.9 Wayland design file (.wayland.json) and Send to Wayland Forge ----------
+function makeDesign() { const b = (typeof bbAll === 'function') ? bbAll() : (window.BZ && S.paths.length ? BZ.bbox(S.paths) : null);
+  return WD.fromPath(S, { kmm: kmm(), bbox: b, version: APP_VERSION, isOuter: p => typeof isOuterCut === 'function' && isOuterCut(p) }); }
+function downloadDesign(doc) { const blob = new Blob([WD.stringify(doc)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = WD.fileName(doc); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+function saveWaylandDesign() { if (!S.paths.length) { toast('No lines to save yet'); return; } const doc = makeDesign(); downloadDesign(doc); toast('Saved ' + WD.fileName(doc) + ' – you can open this in Wayland Forge or on another device', 3500); }
+async function openWaylandDesign(doc) { if (!WD.isDesign(doc)) throw new Error('Not a Wayland design file');
+  const forgeSvg = doc.apps && doc.apps['wayland-forge'] && doc.apps['wayland-forge'].svg;
+  const st = WD.toPath(doc);
+  if (st && Array.isArray(st.paths) && st.paths.length) {
+    await saveNow(); startProject(st.name || doc.name || 'Untitled');
+    const keepPid = S.pid; S = Object.assign(DEFAULTS(), st, { pid: keepPid, src: st.src || { kind: 'wayland-design' } });
+    srcImg = srcEl = null; $('sec-trace').hidden = true; undoSt = []; redoSt = []; clearSel(); pen = null;
+    syncInputs(); enterApp(); closeMenu(); changed(); fit(); await saveNow();
+    toast('Opened Wayland design: ' + (S.name || 'Untitled'), 3000); return true;
+  }
+  if (forgeSvg) { return openFromForge({ svg: forgeSvg, name: doc.name, photos: doc.apps['wayland-forge'].photos || 0, W: doc.artboard && doc.artboard.width, H: doc.artboard && doc.artboard.height }); }
+  toast('That Wayland design has no lines this app can edit yet', 4000); return false; }
+async function sendToForge() { if (!S.paths.length) { toast('No lines to send yet'); return; }
+  if (!confirm('Open this design in Wayland Forge?\n\n• It opens there as a new project, as lines you can place on a badge.\n• Your project here in Waylands Path is kept just as it is.\n• If you are sending it to a laptop, tap Cancel and use Save as Wayland design instead.')) return;
+  const doc = makeDesign();
+  try { await saveNow(); const rec = { v: 2, from: 'waylands-path', name: doc.name, design: doc, t: Date.now() }; await FF.put('toForge', rec); }
+  catch (e) { downloadDesign(doc); toast('Could not hand it over on this device, so the file was saved instead: ' + WD.fileName(doc), 4500); return; }
+  location.href = new URL('../wayland-forge/?from=path', location.href).href; }
+
 const FF = { db() { return new Promise((ok, no) => { const r = indexedDB.open('wayland-share', 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('x')) r.result.createObjectStore('x'); }; r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); },
   async op(mode, fn) { const db = await FF.db(); try { return await new Promise((ok, no) => { const t = db.transaction('x', mode), q = fn(t.objectStore('x')); t.oncomplete = () => ok(q && q.result); t.onerror = () => no(t.error); }); } finally { db.close(); } },
-  get() { return FF.op('readonly', st => st.get('toPath')).catch(() => null); }, clear() { return FF.op('readwrite', st => st.delete('toPath')).catch(() => null); } };
-async function openFromForge(rec) { if (!rec || !rec.svg) return false; await saveNow();
+  get() { return FF.op('readonly', st => st.get('toPath')).catch(() => null); }, clear() { return FF.op('readwrite', st => st.delete('toPath')).catch(() => null); },
+  put(key, val) { return FF.op('readwrite', st => st.put(val, key)); }, getKey(key) { return FF.op('readonly', st => st.get(key)).catch(() => null); }, clearKey(key) { return FF.op('readwrite', st => st.delete(key)).catch(() => null); } };
+async function openFromForge(rec) { if (rec && rec.design && WD.isDesign(rec.design) && rec.design.apps && rec.design.apps['waylands-path'] && rec.design.apps['waylands-path'].project) { return openWaylandDesign(rec.design); }
+  if (!rec || !rec.svg) { if (rec && rec.design) return openWaylandDesign(rec.design); return false; } await saveNow();
   let r; try { r = SVGIN.importSVG(rec.svg); } catch (e) { toast('Could not open the design from Forge: ' + e.message, 5000); return false; }
   startProject(String(rec.name || 'Forge design').slice(0, 40)); S.src = { kind: 'svg', w: r.w, h: r.h }; $('sec-trace').hidden = true; srcImg = null; srcEl = null; S.paths = r.paths;
   if (r.mmW > 0) S.widthMm = Math.round(r.mmW * 100) / 100; const nc = r.paths.filter(p => p.cut).length; S.cutOn = nc > 0; await FF.clear();
@@ -659,11 +693,11 @@ async function openFromForge(rec) { if (!rec || !rec.svg) return false; await sa
   $('ffNote').innerHTML = `<b>${esc(S.name)}</b> came from Wayland Forge as a new project, ${f1(S.widthMm)} × ${f1(r.mmH)} mm.<br><br>Letters arrive as <b>outlines</b> - a line round each letter - not single lines. Edit them with the tools as usual.${nc ? '<br><br>Forge\'s cut lines show in red and stay cuts.' : ''}${rec.photos ? `<br><br>${rec.photos} photo${rec.photos > 1 ? 's' : ''} stayed in Forge - Waylands Path works with lines.` : ''}<br><br>Laser 0,0 is the bottom-left corner of the design. Your Forge design is unchanged.`;
   const d = $('ffDlg'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); return true; }
 $('ffOk').onclick = () => $('ffDlg').close();
-async function checkForge() { const rec = await FF.get(); const bar = $('ffWait'); if (!rec || !rec.svg) { if (bar) bar.hidden = true; return; }
+async function checkForge() { const rec = await FF.get(); const bar = $('ffWait'); if (!rec || (!rec.svg && !rec.design)) { if (bar) bar.hidden = true; return; }
   if (/[?&]from=forge\b/.test(location.search)) { history.replaceState(null, '', location.pathname); await openFromForge(rec); return; }
   if (bar) { bar.hidden = false; $('ffWaitName').textContent = rec.name || 'a design'; } }
 $('ffOpen').onclick = async () => { $('ffWait').hidden = true; await openFromForge(await FF.get()); };
 $('ffDrop').onclick = async () => { await FF.clear(); $('ffWait').hidden = true; };
 syncInputs(); updStats(); updSkip(); refreshHome(); document.body.dataset.ready = '1';
 setTimeout(() => checkForge().catch(e => console.warn(e)), 50);
-window.WP = { photoLast, paint, overlayFile, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };
+window.WP = { photoLast, paint, makeDesign, openWaylandDesign, saveWaylandDesign, sendToForge, overlayFile, get paintN() { return paintN; }, holeCount, innerCuts, hasOuterCut, isOuterCut, noteCutGone, checkVersion, updateReady, busyNow, openMenu, closeMenu, makeCut, get tool() { return tool; }, get S() { return S; }, set paths(v) { S.paths = v; }, get sel() { return sel; }, get act() { return act; }, view, retrace, fit, setTool, toU, kmm, undo, redo, openFile, resume, saveNow, DB, buildOut, changed, skipOver, continueAcross, deleteStretch, extendEnd, closeGapsAll, removeOverlaps, makeCut, hitPath, ACT, nudge, keepSegs, splitAtNodes, get lw() { return lw; } };

@@ -19,7 +19,7 @@
     <div class="hsub">Line drawing, photo or SVG → clean laser lines</div>
     <div class="hbtns">
       <div id="ffWait" class="ffwait" hidden>✏️ A design from Wayland Forge is waiting: <b id="ffWaitName"></b><div class="ffrow"><button id="ffOpen" class="accent">Open it</button><button id="ffDrop">Not now</button></div></div>
-      <label class="hb primary filebtn">🖼️ Open line drawing or SVG<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml" hidden></label>
+      <label class="hb primary filebtn">🖼️ Open line drawing, SVG or Wayland design<input type="file" id="homeFile" accept="image/*,.svg,image/svg+xml,.json,.wayland.json" hidden></label>
       <label class="hb filebtn">📷 Turn a photo into a line drawing<small>pets, people, buildings, objects</small><input type="file" id="homePhoto" accept="image/*" hidden></label>
       <button id="homeResume" class="hb" hidden>↻ Resume last project<small id="homeResumeInfo"></small></button>
       <button id="homeHelp" class="hb">? How it works</button>
@@ -52,7 +52,7 @@
     <div id="stats" class="stats"></div>
     <div id="cutLegend" class="cutleg" hidden><b class="cut">Red = CUT through</b> · <b class="etch">Black = ETCH</b></div>
     <div id="busy" class="busy" hidden>Tracing…</div>
-    <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+    <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml,.json,.wayland.json" hidden></label></div>
     <button id="bgBtn" class="bgbtn" hidden aria-pressed="false" title="Faint photo behind the lines (screen only)">🖼 Photo</button>
   </section>
   <div id="toolDock">
@@ -240,7 +240,7 @@
   <aside id="panel">
     <div class="menuhead"><b>☰ Menu</b><button id="addShape">⬡ Add shape</button><button id="menuClose" aria-label="Close menu">✕</button></div>
     <details name="acc" id="sec-open"><summary>1 · Picture</summary><div class="body">
-      <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml" hidden></label></div>
+      <div class="row"><label class="filebtn grow accent">🖼️ Open line drawing (PNG/JPG) or SVG<input type="file" id="panelFile" accept="image/*,.svg,image/svg+xml,.json,.wayland.json" hidden></label></div>
       <div class="row"><label class="filebtn grow">📷 Turn a photo into a line drawing<input type="file" id="panelPhoto" accept="image/*" hidden></label></div>
       <div class="row"><label class="filebtn grow">➕ Add another line drawing<input type="file" id="overlayLine" accept="image/*,.svg,image/svg+xml" hidden></label></div>
       <div class="row"><label class="filebtn grow">➕ Add another photo<input type="file" id="overlayPhoto" accept="image/*" hidden></label></div>
@@ -327,11 +327,14 @@
       <div class="hint" id="exSummary"></div>
       <div class="row"><button id="shareBtn" class="accent grow big2">📤 Share laser files</button></div>
       <div class="row"><button id="saveZipBtn" class="grow">💾 Save laser zip</button><button id="svgBtn" class="grow">⬇ SVG only</button></div>
+      <div class="row"><button id="wdSave" class="grow">💾 Save as Wayland design</button><button id="wdToForge" class="grow">✏️ Send to Wayland Forge</button></div>
+      <div class="hint">A Wayland design is a file both apps can open. Send to Wayland Forge works on this same device; to a laptop, use Save as Wayland design and open the file there. Your usual laser Export buttons stay as they are.</div>
       <div id="exOut" class="exout"></div>
     </div></details>
     <details name="acc" id="sec-proj"><summary>Project</summary><div class="body">
       <div class="hint">Your work saves on this device by itself. Open the app again and tap Resume.</div>
       <div class="row"><button id="newBtn" class="grow">✚ New project (open another picture)</button></div>
+      <div class="row"><button id="wdSave2" class="grow">💾 Save as Wayland design</button><label class="filebtn grow">📂 Open Wayland design<input type="file" id="wdOpen" accept=".json,.wayland.json,application/json" hidden></label></div>
       <div class="hint" id="saveInfo"></div><div class="hint" id="syncEd"></div>
       <div class="hint small">Waylands Path <span id="verOut"></span> · works offline · sister app to Wayland Forge</div>
     </div></details>
@@ -352,6 +355,7 @@
     <label class="full"><span class="hint">Defaults: Etch lines Vector 25% at 3000 mm/min. Cut Vector 100% at 1000 mm/min, 3 passes, each cut line gets all its passes, holes first. Your changes are kept on this device.</span></label></div></details>
   <label class="lzhow">Save as <select id="lzHow"><option value="zip">One .zip (Windows: right-click › Extract All)</option><option value="files">Separate files</option><option value="share">Share (send to laptop, Drive…)</option><option value="svg">SVG artwork only</option></select></label>
   <div class="lzbbtn"><button id="lzDlgCancel">Cancel</button><button id="lzDlgGo" class="accent">Export</button></div></dialog>
+<script src="js/wayland-design.js"></script>
 <script src="js/bez.js"></script>
 <script src="js/trace.js"></script>
 <script src="js/svgin.js"></script>
