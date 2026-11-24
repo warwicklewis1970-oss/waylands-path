@@ -419,8 +419,131 @@ const T = (() => {
     for (const c of chains(gr, arm, 40)) { const L = plen(c.pts); if (L < minL * 0.5) continue; let sc = 0; for (const q of c.pts) sc += magAt(q); sc = sc / c.pts.length * L; if (sc < hi * minL * X.score) continue; const p = BZ.fromPolyline(smooth(c.pts, c.closed), { tol, lineTol: tol * 1.2, arm, corner, smooth: arm * 0.5, minStraight: 12 * px, closed: c.closed, forced: [] }); if (!p) continue; paths.push(p); }
     for (const p of paths) if (back !== 1) for (const nd of p.n) { nd.x *= back; nd.y *= back; if (nd.i) nd.i = [nd.i[0] * back, nd.i[1] * back]; if (nd.o) nd.o = [nd.o[0] * back, nd.o[1] * back]; }
     return { paths, lw: 1.5 * px * back, darkBg: false, mode: 'photo', parts: 1, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: 0, solids: 0, photo: o, dbg: opts.debug ? { w, h, edges: E } : null }; }
-  // one entry point: line art (unchanged) or photo
-  const run = (img, opts = {}) => opts.kind === 'photo' ? photo(img, opts.photo || {}) : lineArt(img, opts);
-  return { VERSION, run, lineArt, photo, PHOTO0, outerCut, grey, otsu, blur, thin, edt, fillHoles, contoursIso, lineWidth, skelGraph, area };
+  // =====================================================================================================
+  // v5.12  EXACT OUTLINE tracer for black-and-white / line-art pictures
+  //   no blur, no paper flattening, no straightening guesses: the edge is found where the picture crosses half-way between ink and paper
+  //   (to a fraction of a pixel), small pictures are enlarged with a smooth (bicubic) curve first so even hard-edged pixel art gets clean
+  //   curves, sharp corners are rebuilt to a true point, then curves / straight lines are fitted tightly. The old tracer (lineArt) is untouched.
+  // =====================================================================================================
+  function bwStats(g, w, h) { const n = g.length, H = new Uint32Array(256); let mid = 0;
+    for (let i = 0; i < n; i++) { const v = g[i]; H[Math.max(0, Math.min(255, v * 255 | 0))]++; if (v > 0.2 && v < 0.8) mid++; }
+    const th = otsu(g), tb = Math.round(th * 255 - 0.5); let nl = 0, nh = 0; for (let i = 0; i < 256; i++) { if (i <= tb) nl += H[i]; else nh += H[i]; }
+    const med = (a, b, tot) => { let s = 0; for (let i = a; i <= b; i++) { s += H[i]; if (s >= tot / 2) return i / 255; } return b / 255; };
+    const lo = nl ? med(0, tb, nl) : 0, hi = nh ? med(tb + 1, 255, nh) : 1, level = (lo + hi) / 2;
+    // how many edge pixels are in-between greys (soft, anti-aliased edges) vs hard stairs
+    let ed = 0, soft = 0; const lv = level;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x, a = g[i] < lv; for (const j of [x < w - 1 ? i + 1 : -1, y < h - 1 ? i + w : -1]) { if (j < 0 || (g[j] < lv) === a) continue; ed += 2; if (g[i] > 0.12 && g[i] < 0.88) soft++; if (g[j] > 0.12 && g[j] < 0.88) soft++; } }
+    const dark = nl / n, inkFrac = Math.min(nl, nh) / n;
+    return { th, lo, hi, level, sep: hi - lo, midFrac: mid / n, dark, inkFrac, soft: ed ? soft / ed : 0, edges: ed,
+      clean: (hi - lo) > 0.45 && mid / n < 0.12 && inkFrac > 0.0008 }; }
+  // smooth (Catmull-Rom) enlargement of a grey picture by a whole number u
+  function cubicUp(g, w, h, u) { const W = w * u, H = h * u, wt = (t) => [-0.5 * t * t * t + t * t - 0.5 * t, 1.5 * t * t * t - 2.5 * t * t + 1, -1.5 * t * t * t + 2 * t * t + 0.5 * t, 0.5 * t * t * t - 0.5 * t * t];
+    const mk = (N, n) => { const idx = new Int32Array(N * 4), wg = new Float32Array(N * 4); for (let X = 0; X < N; X++) { const s = (X + 0.5) / u - 0.5, i0 = Math.floor(s), c = wt(s - i0); for (let k = 0; k < 4; k++) { idx[X * 4 + k] = Math.max(0, Math.min(n - 1, i0 - 1 + k)); wg[X * 4 + k] = c[k]; } } return { idx, wg }; };
+    const mx = mk(W, w), my = mk(H, h), tmp = new Float32Array(W * h), out = new Float32Array(W * H);
+    for (let y = 0; y < h; y++) { const row = y * w; for (let X = 0; X < W; X++) { const b = X * 4; tmp[y * W + X] = g[row + mx.idx[b]] * mx.wg[b] + g[row + mx.idx[b + 1]] * mx.wg[b + 1] + g[row + mx.idx[b + 2]] * mx.wg[b + 2] + g[row + mx.idx[b + 3]] * mx.wg[b + 3]; } }
+    for (let Y = 0; Y < H; Y++) { const b = Y * 4, r0 = my.idx[b] * W, r1 = my.idx[b + 1] * W, r2 = my.idx[b + 2] * W, r3 = my.idx[b + 3] * W, c0 = my.wg[b], c1 = my.wg[b + 1], c2 = my.wg[b + 2], c3 = my.wg[b + 3];
+      for (let X = 0; X < W; X++) out[Y * W + X] = tmp[r0 + X] * c0 + tmp[r1 + X] * c1 + tmp[r2 + X] * c2 + tmp[r3 + X] * c3; }
+    return out; }
+  const lenOf = l => { let s = 0; for (let i = 1; i < l.length; i++) s += D(l[i - 1], l[i]); return s; };
+  // closed polyline resampled at an even step (first point is not repeated)
+  function resClosed(l, step) { const p = l.slice(); if (p.length > 2 && D(p[0], p[p.length - 1]) < 1e-9) p.pop(); const n = p.length, o = [p[0].slice()]; let acc = 0;
+    for (let i = 0; i < n; i++) { let a = p[i]; const b = p[(i + 1) % n]; let L = D(a, b); while (acc + L >= step) { const t = (step - acc) / L, q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; o.push(q); a = q; L = D(a, b); acc = 0; } acc += L; }
+    if (o.length > 2 && D(o[0], o[o.length - 1]) < step * 0.4) o.pop(); return o; }
+  // total-least-squares line through points: {c: centre, d: unit direction, rms}
+  function fitLine(pts) { let cx = 0, cy = 0; for (const q of pts) { cx += q[0]; cy += q[1]; } cx /= pts.length; cy /= pts.length; let sxx = 0, sxy = 0, syy = 0;
+    for (const q of pts) { const x = q[0] - cx, y = q[1] - cy; sxx += x * x; sxy += x * y; syy += y * y; } const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), d = [Math.cos(th), Math.sin(th)]; let e = 0;
+    for (const q of pts) { const r = (q[0] - cx) * -d[1] + (q[1] - cy) * d[0]; e += r * r; } return { c: [cx, cy], d, rms: Math.sqrt(e / pts.length) }; }
+  // Find the true corners of a closed outline and rebuild each one as a sharp point (the smooth enlargement rounds every corner a little).
+  // Returns the new outline and the corner points to keep as nodes.
+  function sharpen(l, u, armW, degTh, bl) { bl = bl || 0; const step = Math.max(0.5, Math.min(1, armW / 4)), p = resClosed(l, step), n = p.length; if (n < 12) return { pts: p, forced: [] };
+    const k = Math.max(2, Math.round(armW / step)), th = degTh * Math.PI / 180, ang = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const a = p[(i - k + n) % n], b = p[(i + k) % n], c = p[i], v1 = [c[0] - a[0], c[1] - a[1]], v2 = [b[0] - c[0], b[1] - c[1]], l1 = Math.hypot(v1[0], v1[1]) || 1, l2 = Math.hypot(v2[0], v2[1]) || 1;
+      ang[i] = Math.acos(clamp((v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2), -1, 1)); }
+    const cand = []; for (let i = 0; i < n; i++) { if (ang[i] < th) continue; let mx = true; for (let j = -k; j <= k && mx; j++) { if (!j) continue; const q = ang[(i + j + n) % n]; if (q > ang[i] || (q === ang[i] && j < 0)) mx = false; } if (mx) cand.push(i); }
+    if (!cand.length) return { pts: p, forced: [] };
+    const k0 = Math.max(2, Math.round((1.3 + 2.2 * bl) * u / step)), k1 = Math.max(k0 + 4, Math.round((4.5 + 3 * bl) * u / step)), maxShift = (2.8 + 2 * bl) * u, rep = new Map(), kill = new Uint8Array(n), forced = [];
+    for (const i of cand) { const near = cand.some(j => j !== i && Math.min(Math.abs(j - i), n - Math.abs(j - i)) < k1 + k0); if (near) continue;
+      const A = [], B = []; for (let j = k0; j <= k1; j++) { A.push(p[(i - j + n) % n]); B.push(p[(i + j) % n]); }
+      const la = fitLine(A), lb = fitLine(B); if (la.rms > 0.28 * u + 0.25 || lb.rms > 0.28 * u + 0.25) continue;
+      const det = la.d[0] * lb.d[1] - la.d[1] * lb.d[0]; if (Math.abs(det) < 0.2) continue;
+      const t = ((lb.c[0] - la.c[0]) * lb.d[1] - (lb.c[1] - la.c[1]) * lb.d[0]) / det, M = [la.c[0] + la.d[0] * t, la.c[1] + la.d[1] * t];
+      if (D(M, p[i]) > maxShift) continue;
+      for (let j = -k0 + 1; j < k0; j++) kill[(i + j + n) % n] = 1; rep.set(i, M); forced.push(M); }
+    const out = []; for (let i = 0; i < n; i++) { if (rep.has(i)) out.push(rep.get(i)); else if (!kill[i]) out.push(p[i]); } return { pts: out, forced }; }
+  function exactArt(img, opts = {}) { const t0 = Date.now(), detail = clamp(+opts.detail || 5, 1, 10), cornerS = clamp(+opts.corners || 5, 1, 10);
+    const P = prep(img, 3000); let w = P.w, h = P.h; const g0 = grey(P.d, w, h), S = bwStats(g0, w, h);
+    // which is ink? Auto: dark lines on light paper, unless the picture is mostly dark all round the edge (light shapes on dark)
+    let ring = 0, rn = 0; const lv = S.level; for (let x = 0; x < w; x++) { ring += (g0[x] < lv) + (g0[(h - 1) * w + x] < lv); rn += 2; } for (let y = 1; y < h - 1; y++) { ring += (g0[y * w] < lv) + (g0[y * w + w - 1] < lv); rn += 2; }
+    const mode = opts.mode === 'normal' || opts.mode === 'light' ? opts.mode : opts.mode === 'auto' ? 'auto' : opts.invert ? 'light' : 'auto';
+    const darkBg = mode === 'auto' && ring / rn > 0.6 && S.dark > 0.4, invert = mode === 'light' || darkBg;
+    const f0 = invert ? g0.map(v => 1 - v) : g0, level = invert ? 1 - S.level : S.level, aliased = S.soft < 0.25;
+    // enlarge small pictures (hard-edged ones always) so the contour has plenty of points; never beyond about 4 million points
+    const big = Math.max(w, h); let u = clamp(Math.round(2400 / big), 1, 4); if (aliased && u < 2 && big <= 1800) u = 2; while (u > 1 && w * h * u * u > 4.4e6) u--;
+    let F = u > 1 ? cubicUp(f0, w, h, u) : f0; const W = w * u, H = h * u, back = 1 / (P.sc * u), N = W * H;
+    // hard-edged (stair-stepped) pictures: a very light smoothing takes the steps out of diagonals and curves; the corner rebuild below puts sharp corners back
+    const m0 = new Uint8Array(w * h); for (let i = 0; i < m0.length; i++) m0[i] = f0[i] < level ? 1 : 0; const strokeSrc = lineWidth(m0, w, h), bl = aliased ? clamp((strokeSrc - 1.5) * 0.35, 0, 0.7) : 0; if (bl) F = blur(F, W, H, bl * u);
+    // all ink edges, where the picture crosses half-way
+    const minArea = Math.max(0.4, 2 + (5 - detail) * 0.4) * u * u, minPer = Math.max(2.5, 3 - (detail - 5) * 0.3) * u;
+    const raw = contoursIso(F, W, H, level).map(l => l.map(q => [clamp(q[0], 0, W), clamp(q[1], 0, H)])); const loops = raw.filter(l => Math.abs(area(l)) >= minArea && lenOf(l) >= minPer).sort((a, b) => Math.abs(area(b)) - Math.abs(area(a)));
+    // ---- the outside cut ----
+    // low-resolution ink mask just to find out whether the design is one piece (or several parts that need joining)
+    const f = Math.max(1, Math.ceil(Math.max(W, H) / 1100)), wl = Math.ceil(W / f), hl = Math.ceil(H / f), NL = wl * hl, ink = new Uint8Array(NL);
+    for (let y = 0; y < H; y++) { const yl = (y / f) | 0; for (let x = 0; x < W; x++) if (F[y * W + x] < level) ink[yl * wl + ((x / f) | 0)] = 1; }
+    const bg = new Uint8Array(NL), st = []; const push = i => { if (!ink[i] && !bg[i]) { bg[i] = 1; st.push(i); } };
+    for (let x = 0; x < wl; x++) { push(x); push((hl - 1) * wl + x); } for (let y = 0; y < hl; y++) { push(y * wl); push(y * wl + wl - 1); }
+    while (st.length) { const p = st.pop(), x = p % wl; if (x > 0) push(p - 1); if (x < wl - 1) push(p + 1); if (p >= wl) push(p - wl); if (p < NL - wl) push(p + wl); }
+    let region = fillHoles(inv(bg), wl, hl); const minPartL = Math.max(12, NL * 0.0015); let parts = keepBig(region, wl, hl, minPartL); const lwL = lineWidth(invert ? inv(ink) : ink, wl, hl), lw = lwL * f;   // width of the drawn LINES (dark), also when the shapes are light on dark
+    // one piece: its outer edge is the cut line (and is not etched twice). Pieces close together (leaves, a ground strip...) are joined into one cut line the way v5.11 did.
+    // Pieces far apart: no cut is made here - Make cut (Size & cut) goes round them with your own settings, and nothing is thrown away.
+    let blob = null;
+    for (const k of [1.5, 2.5, 4]) { if (parts <= 1) break; const c = fillHoles(close(region, wl, hl, lwL * k), wl, hl), n = comps(c, wl, hl, minPartL).big; if (n < parts) { region = c; parts = keepBig(region, wl, hl, minPartL); blob = region; } }
+    let cutLoop = null, dropped = [], etchLoops = loops, cutTol = null;
+    if (parts <= 1 && !blob && loops.length) { cutLoop = loops[0]; etchLoops = loops.slice(1); dropped.push(cutLoop); }
+    else if (parts <= 1 && blob) { // joined: cut round the joined shape, ink loops lying on it are not etched twice
+      const cf = new Float32Array(NL); for (let i = 0; i < NL; i++) cf[i] = region[i] ? 0 : 1;
+      const bl = contoursIso(blur(cf, wl, hl, 0.35), wl, hl, 0.5).filter(l => Math.abs(area(l)) > minPartL).sort((a, b) => Math.abs(area(b)) - Math.abs(area(a)));
+      if (bl[0]) { cutLoop = bl[0].map(q => [q[0] * f, q[1] * f]); cutTol = f;
+        const cutPts = []; for (let i = 1; i < cutLoop.length; i++) { const a = cutLoop[i - 1], b = cutLoop[i], n = Math.max(1, Math.ceil(D(a, b) / f)); for (let k = 0; k < n; k++) cutPts.push([(a[0] + (b[0] - a[0]) * k / n) / f, (a[1] + (b[1] - a[1]) * k / n) / f]); }
+        const dc = edtPts(cutPts, wl, hl), dcut = q => { const x = clamp(Math.floor(q[0] / f), 0, wl - 1), y = clamp(Math.floor(q[1] / f), 0, hl - 1); return Math.sqrt(dc[y * wl + x]); }, near = Math.max(1.2, Math.min(lwL * 0.35, 6)) + 1.3;   // + the low-resolution mask is up to one of its pixels fatter
+        etchLoops = []; for (const l of loops) { let sm = 0, n = 0, c2 = 0; for (let i = 0; i < l.length; i += Math.max(1, (l.length / 80) | 0)) { const d = dcut(l[i]); sm += d; n++; if (d < near) c2++; } if (n && sm / n < near && c2 / n > 0.7) dropped.push(l); else etchLoops.push(l); } } }
+    // ---- fit curves and straight lines, sharp corners kept ----
+    const aliasPad = aliased ? 1 + 1.8 * Math.min(1, strokeSrc / 4) : 1, tolSrc = clamp(0.2 * aliasPad * (1 + (5 - detail) * 0.18), 0.09, 0.9), tol = Math.max(0.3, tolSrc * u), arm = clamp((0.85 + (aliased ? 0.8 * bl / 0.7 : 0)) * u, 2.2, 8), cornerDeg = clamp(30 + (aliased ? 8 * bl / 0.7 : 0) + (5 - cornerS) * 2.2, 14, 60);
+    const opt = { tol, lineTol: tol * 1.15, arm, corner: cornerDeg, smooth: 0.7, minStraight: Math.max(9, 3 * u), straightDev: Math.max(0.3, tol * 0.5) };
+    const fit = (l, o2) => { const s = sharpen(l, u, arm, cornerDeg, bl), p = BZ.fromPolyline(s.pts, Object.assign({ closed: true }, opt, o2 || {}, { forced: s.forced })); return p && p.n.length >= 2 ? p : null; };
+    const paths = []; for (const l of etchLoops) { const p = fit(l); if (p) paths.push(p); }
+    const cuts = []; if (cutLoop) { const p = cutTol ? fit(cutLoop, { tol: cutTol * 0.9, lineTol: cutTol, arm: Math.max(arm, cutTol * 2), smooth: cutTol * 1.2, corner: 38, minStraight: cutTol * 6, straightDev: cutTol * 0.5 }) : fit(cutLoop, { tol: Math.max(0.25, tol * 0.8), lineTol: Math.max(0.3, tol), smooth: 0.7 }); if (p) { p.cut = true; cuts.push(p); } }
+    const all = paths.concat(cuts), sc = nd => { nd.x *= back; nd.y *= back; if (nd.i) nd.i = [nd.i[0] * back, nd.i[1] * back]; if (nd.o) nd.o = [nd.o[0] * back, nd.o[1] * back]; };
+    for (const p of all) for (const nd of p.n) sc(nd);
+    return { paths: all, lw: lw * back, darkBg, mode: invert ? (darkBg ? 'auto' : 'light') : mode, parts, w: img.w, h: img.h, ms: Date.now() - t0, gaps: 0, nodes: BZ.countNodes(paths), cutNodes: BZ.countNodes(cuts), solids: 0, engine: 'exact', clean: S.clean, aliased, up: u,
+      dropped: opts.keepDropped ? dropped.map(l => l.map(q => [q[0] * back, q[1] * back])) : undefined, dbg: opts.debug ? { w: W, h: H, level, wl, hl, f, region, parts, lwL, blob: !!blob, invert } : null }; }
+  // ---- v5.12 CENTRE LINE: one line down the middle of every pen stroke (for hair-thin drawings, where an outline would be a double line) ----
+  function centreArt(img, opts = {}) { const t0 = Date.now(), detail = clamp(+opts.detail || 5, 1, 10), cornerS = clamp(+opts.corners || 5, 1, 10);
+    const P = prep(img, 3000); const w0 = P.w, h0 = P.h, g0 = grey(P.d, w0, h0), S = bwStats(g0, w0, h0), lv0 = S.level;
+    let ring = 0, rn = 0; for (let x = 0; x < w0; x++) { ring += (g0[x] < lv0) + (g0[(h0 - 1) * w0 + x] < lv0); rn += 2; } for (let y = 1; y < h0 - 1; y++) { ring += (g0[y * w0] < lv0) + (g0[y * w0 + w0 - 1] < lv0); rn += 2; }
+    const mode = opts.mode === 'normal' || opts.mode === 'light' ? opts.mode : opts.mode === 'auto' ? 'auto' : opts.invert ? 'light' : 'auto', darkBg = mode === 'auto' && ring / rn > 0.6 && S.dark > 0.4, invert = mode === 'light' || darkBg;
+    const f0 = invert ? g0.map(v => 1 - v) : g0, inkV = invert ? 1 - S.hi : S.lo, paperV = invert ? 1 - S.lo : S.hi, lvl = inkV + 0.64 * (paperV - inkV);   // ink = at least about a third covered, so faint hairlines are kept
+    const big = Math.max(w0, h0); let u = clamp(Math.round(2400 / big), 1, 4); if (u < 2 && big <= 1800) u = 2; while (u > 1 && w0 * h0 * u * u > 4.4e6) u--;
+    const F = u > 1 ? cubicUp(f0, w0, h0, u) : f0, w = w0 * u, h = h0 * u, N = w * h, back = 1 / (P.sc * u), E = new Uint8Array(N); for (let i = 0; i < N; i++) E[i] = F[i] < lvl ? 1 : 0;
+    const lwSrc = lineWidth(E, w, h) / u;
+    thin(E, w, h); tidySkeleton(E, w, h);
+    const px = u, gr = skelGraph(E, w, h), arm = 3 * px, minL = (9 - detail * 0.7) * px;
+    mergeDeg2(gr); prune(gr, minL * 0.35, minL * 0.6); collapseClose(gr, 1.5 * px); mergeDeg2(gr); const gaps = closeGaps(gr, (1.5 + detail * 0.25) * px, arm); mergeDeg2(gr); prune(gr, minL * 0.35, minL * 0.6);
+    const sm = Math.max(1, Math.round(0.7 * px)), tol = (0.3 + (10 - detail) * 0.03) * px, corner = 38 - cornerS * 1.6, paths = [];
+    const smooth = (pts, closed) => { if (pts.length < 5 || sm < 1) return pts; const n = pts.length, out = []; for (let i = 0; i < n; i++) { if (!closed && (i === 0 || i === n - 1)) { out.push(pts[i]); continue; }
+        let sx = 0, sy = 0, c = 0; for (let k = -sm; k <= sm; k++) { let j = i + k; if (closed) j = (j + n) % n; else if (j < 0 || j >= n) continue; sx += pts[j][0]; sy += pts[j][1]; c++; } out.push([sx / c, sy / c]); } return out; };
+    for (const c of chains(gr, arm, 40)) { const L = plen(c.pts); if (L < minL * 0.5) continue; const q = c.pts.map(a => [a[0] + 0.5, a[1] + 0.5]);
+      const p = BZ.fromPolyline(smooth(q, c.closed), { tol, lineTol: tol * 1.2, arm, corner, smooth: arm * 0.4, minStraight: 8 * px, closed: c.closed, forced: [] }); if (!p) continue; paths.push(p); }
+    for (const p of paths) for (const nd of p.n) { nd.x *= back; nd.y *= back; if (nd.i) nd.i = [nd.i[0] * back, nd.i[1] * back]; if (nd.o) nd.o = [nd.o[0] * back, nd.o[1] * back]; }
+    return { paths, lw: lwSrc / P.sc, darkBg, mode: invert ? (darkBg ? 'auto' : 'light') : mode, parts: 1, w: img.w, h: img.h, ms: Date.now() - t0, gaps, nodes: BZ.countNodes(paths), cutNodes: 0, solids: 0, engine: 'centre', clean: S.clean, up: u, dbg: null }; }
+  // one entry point. v5.12: engine 'exact' = exact outline tracer; 'auto' = exact if the picture is clean black-and-white, otherwise the older tracer;
+  // anything else (old saved projects have no engine) = the older tracer, exactly as before
+  function isClean(img) { const P = prep(img, 1200), g = grey(P.d, P.w, P.h), S = bwStats(g, P.w, P.h); const m = new Uint8Array(g.length), inv_ = S.dark > 0.5; for (let i = 0; i < g.length; i++) m[i] = (g[i] < S.level) !== inv_ ? 1 : 0;
+    S.stroke = lineWidth(m, P.w, P.h) / P.sc; return S; }
+  const run = (img, opts = {}) => { if (opts.kind === 'photo') return photo(img, opts.photo || {});
+    if (opts.engine === 'exact') return exactArt(img, opts);
+    if (opts.engine === 'centre') return centreArt(img, opts);
+    if (opts.engine === 'auto') { const S = isClean(img); if (S.clean) return S.stroke <= 2.1 ? centreArt(img, opts) : exactArt(img, opts); const r = lineArt(img, opts); r.engine = 'classic'; r.clean = false; return r; }
+    return lineArt(img, opts); };
+  return { VERSION, run, lineArt, exactArt, centreArt, isClean, photo, PHOTO0, outerCut, grey, otsu, blur, thin, edt, fillHoles, contoursIso, lineWidth, skelGraph, area };
 })();
 if (typeof module !== 'undefined') module.exports = T;

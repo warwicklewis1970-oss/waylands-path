@@ -273,17 +273,20 @@
         <div class="hint">Draw round one part (a face, the eyes…) and only that part is traced again with more lines and points.</div>
       </div>
       <div id="lineCtl">
+      <div class="lbl">How to read it</div>
+      <div class="seg wide4" id="tengine"><button data-teng="auto">Auto<br>(best)</button><button data-teng="exact">Outline<br>(exact shapes)</button><button data-teng="centre">Centre<br>line</button><button data-teng="classic">Old<br>tracer</button></div>
+      <div class="hint">Auto: clean black-and-white pictures are traced exactly (edges to a fraction of a pixel, sharp corners, smooth curves, nothing blurred). Hair-thin pen drawings get one line down the middle. <b>Old tracer</b> is the v5.11 way, in case you prefer it.</div>
       <div class="lbl">The drawing is</div>
       <div class="seg wide3" id="tmode"><button data-tmode="normal">Dark lines on light paper</button><button data-tmode="light">Light lines on dark</button><button data-tmode="auto">Auto</button></div>
-      <label class="rg"><span>Remove faint lines</span><input type="range" id="faint" min="0" max="10" step="1" value="4"><output id="faintOut">4</output></label>
-      <div class="hint">Raise it if ruled paper lines, shadows or smudges get traced. Lower it if faint parts of your drawing go missing.</div>
+      <div id="faintRow"><label class="rg"><span>Remove faint lines</span><input type="range" id="faint" min="0" max="10" step="1" value="4"><output id="faintOut">4</output></label>
+      <div class="hint">Raise it if ruled paper lines, shadows or smudges get traced. Lower it if faint parts of your drawing go missing. (Old tracer and shaded pictures only.)</div></div>
       <label class="rg"><span>Detail</span><input type="range" id="detail" min="1" max="10" step="1" value="5"><output id="detailOut">5</output></label>
       <label class="rg"><span>Corners</span><input type="range" id="corners" min="1" max="10" step="1" value="5"><output id="cornersOut">5</output></label>
-      <div class="hint">Detail: higher keeps short bits, lower clears specks. Corners: higher finds more sharp corners.</div>
+      <div class="hint">Detail: higher keeps tiny bits and traces tighter, lower clears specks. Corners: higher finds more sharp corners.</div>
       </div>
       <div class="hint" id="traceInfo"></div>
       <details class="adv"><summary>Advanced</summary>
-        <label class="chk"><input type="checkbox" id="straighten" checked>Make nearly level / upright lines exactly straight</label>
+        <label class="chk"><input type="checkbox" id="straighten" checked>Make nearly level / upright lines exactly straight (old tracer only)</label>
         <div class="row"><button id="retraceBtn" class="grow">↻ Trace again</button></div>
       </details>
       <div class="hint">Moving these re-traces the picture and replaces your edits (Undo brings them back).</div>

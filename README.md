@@ -39,6 +39,15 @@ Your last project is kept on the device (IndexedDB).
 - If a trace finds no outside edge, a red outer cut line is made automatically.
 - **Draw / pen**: a stylus is never treated as a second finger; the palm is ignored while the pen is down; an extra finger no longer cancels a stroke; ink appears from the first pixel (no dead zone), every pen sample is used, and the live stroke is drawn on its own layer without redrawing the picture. Smoothing happens on pen-up.
 
+## v5.12 - Exact tracer for black-and-white pictures
+- **A new tracer reads clean black-and-white / line-art pictures exactly.** No blur, no paper-flattening guesses, no "make nearly level lines level": every edge is placed where the picture crosses half-way between ink and paper (to a fraction of a pixel), small pictures are first enlarged with a smooth bicubic curve, **corners are rebuilt as true sharp points**, curves become smooth Béziers and straight edges stay straight. Small features, holes, thin lines and text are kept. Typical match with the picture: 98-100 %, against 90-95 % (and sometimes far less) before.
+- **Trace section → "How to read it":** **Auto (best)** (clean black-and-white → exact outline; hair-thin pen lines → centre line; shaded / photographed pictures → the old tracer), **Outline (exact shapes)**, **Centre line** (one line down the middle of every pen stroke, for hair-thin drawings where an outline would be a double line) and **Old tracer** (the v5.11 way, unchanged). One **Detail** slider: higher = tighter fit and keeps tiny bits.
+- Clean black-and-white pictures now keep up to 2400 px when opened (was 1600) and are stored as PNG.
+- Pictures made of several separate pieces get **no automatic cut from the tracer**; the usual red cut line is made round them (Size & cut: Outline gap / Tightness).
+- **Saved designs are untouched:** a project saved before v5.12 has no tracer setting, so it keeps the old tracer when traced again; laser files of saved designs are byte-identical to v5.11 (checked). The old tracer button reproduces v5.11 lines exactly.
+- **Laser output:** the laser steps are unchanged (etch 25 % at F3000, cut 100 % at F1000 x3, etch first, cut last). A *new* trace of the same picture gives different lines (sharper, usually more accurate), so the file is different - look at it on screen before you burn.
+- A saved v5.8 copy is still at `/v5.8/`.
+
 ## v5.11 - One big ETCH | CUT switch
 
 * A big **Editing: ETCH lines | CUT lines** switch is always on screen above the tools.

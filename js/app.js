@@ -1,6 +1,6 @@
 // Waylands Path v4 - app: open a line drawing or SVG, trace, edit Bezier paths (simple Inkscape-style node tool), laser export, save.
 'use strict';
-const APP_VERSION = 'v5.11';
+const APP_VERSION = 'v5.12';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f1 = v => (Math.round(v * 10) / 10).toString();
@@ -9,7 +9,7 @@ const f1 = v => (Math.round(v * 10) / 10).toString();
 // v5.3: richer photo defaults (more lines and points) for NEW traces; projects already traced keep their own saved settings and lines
 const PHOTO_KEY = 'wp-photo1', PHOTO_DEF = () => ({ detail: 6, smooth: 4, minLen: 3 });
 function photoLast() { try { const v = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (v && !(v.detail === 5 && v.smooth === 5 && v.minLen === 4)) return Object.assign(PHOTO_DEF(), v); } catch (e) { /* */ } return PHOTO_DEF(); }
-const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detail: 5, corners: 5, mode: 'auto', faint: 4, straighten: true, kind: 'line', photo: photoLast() },
+const DEFAULTS = () => ({ name: 'Untitled', paths: [], src: null, trace: { detail: 5, corners: 5, mode: 'auto', faint: 4, straighten: true, kind: 'line', engine: 'auto', photo: photoLast() },
   widthMm: 150, lineMm: 0.3, cutOn: true, cutOff: 0.5, cutTight: 8, gapMm: 1.5, shortMm: 2, showPhoto: false, photoOp: 25, saved: 0, ver: 3, v4: 1, sheet: SHEET0() });
 function SHEET0() { return { on: false, W: 200, H: 200, margin: 5, gap: 5, nx: 1, ny: 1, place: 'centre' }; }
 let S = DEFAULTS(), srcImg = null, srcEl = null, undoSt = [], redoSt = [], tool = 'move';
@@ -145,7 +145,7 @@ function makeCut(auto) { if (!auto) S.noAutoCut = 0; const e = etch(); if (!e.le
   for (const p of all) { const f = BZ.flatten(p, 0.5 / s); g.moveTo((f[0][0] - ox) * s, (f[0][1] - oy) * s); for (let i = 1; i < f.length; i++) g.lineTo((f[i][0] - ox) * s, (f[i][1] - oy) * s); }
   g.stroke(); const id = g.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = id[i * 4] < 160 ? 1 : 0;
   const loops = T.outerCut(m, w, h, offU * s, brU * s).map(l => l.map(([x, y]) => [x / s + ox, y / s + oy]));
-  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? (S.trace && S.trace.kind === 'photo' ? 'A red cut line was made round the drawing. Don\'t want it cut out? Untick it in Size & cut.' : 'No outside edge was found in the picture, so a red cut line was made round the design.') : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
+  if (!loops.length) { toast('Could not make a cut line.'); return; } pushUndo(); S.paths = e.concat(keepIn, loops.map(l => Object.assign(BZ.fromPolyline(l, { closed: true, tol: 0.6 / s, arm: 4 / s, corner: 40 }), { cut: true }))); if (tabCfg) { let big = null, ba = 0; for (const p of S.paths) { if (!p.cut || p.hole || keepIn.includes(p)) continue; const b = BZ.bbox([p]); if (b && b.w * b.h > ba) { ba = b.w * b.h; big = p; } } if (big) big.tabs = JSON.parse(JSON.stringify(tabCfg)); } S.cutOn = true; syncInputs(); changed(); toast(auto ? (S.trace && S.trace.kind === 'photo' ? 'A red cut line was made round the drawing. Don\'t want it cut out? Untick it in Size & cut.' : (lastTr && lastTr.engine === 'exact' ? 'The picture has separate pieces, so a red cut line was made round them. Size & cut: Outline gap and Tightness change it.' : lastTr && lastTr.engine === 'centre' ? 'A red cut line was made round the pen lines. Size & cut: Outline gap changes it.' : 'No outside edge was found in the picture, so a red cut line was made round the design.')) : 'Outside cut line made - drag it with the Cut out tool to adjust.', auto ? 4500 : 2600); }
 // ---------- tracing ----------
 // The tracer normally runs in a helper (js/worker.js) so the screen stays smooth. If the helper can't load, says nothing within a few
 // seconds, errors, or takes far too long, tracing carries on here on the main screen instead - never "Tracing..." forever.
@@ -166,11 +166,17 @@ function runTrace(img, opts) { return new Promise(res => { const job = { img, op
 let traceSeq = 0;
 async function retrace(record = true) { if (!srcImg) return; const seq = ++traceSeq; $('busy').textContent = 'Tracing…'; $('busy').hidden = false;
   let r; try { r = await runTrace(srcImg, S.trace); } catch (err) { r = { error: String(err && err.message || err) }; } if (seq !== traceSeq) return; $('busy').hidden = true;
-  if (r.error) { toast('Tracing failed: ' + r.error, 4000); return; } if (record) pushUndo(); lw = r.lw || 0;
+  if (r.error) { toast('Tracing failed: ' + r.error, 4000); return; } if (record) pushUndo(); lw = r.lw || 0; lastTr = r;
   const keepUC = record ? S.paths.filter(p => p.cut && p.uc).map(p => BZ.clone(p)) : []; S.paths = r.paths; clearSel(); pen = null; if (S.noAutoCut) S.paths = S.paths.filter(p => !p.cut || p.uc || p.hole);
   if (keepUC.length) { for (const k of keepUC) { const kb = BZ.bbox([k]), m = S.paths.findIndex(q => !q.cut && q.z && (b => Math.abs(b.x0 - kb.x0) + Math.abs(b.y0 - kb.y0) + Math.abs(b.x1 - kb.x1) + Math.abs(b.y1 - kb.y1) < 4)(BZ.bbox([q]))); if (m >= 0) S.paths.splice(m, 1); S.paths.push(k); } toast(`Traced again - your ${keepUC.length} cut out${keepUC.length > 1 ? 's were' : ' was'} kept`, 3500); }
   const nc = r.paths.filter(p => p.cut).length;
   if (r.mode === 'photo') $('traceInfo').innerHTML = `Photo: ${r.paths.length} lines, ${r.nodes} points. Fewer lines: lower <b>Detail</b> or raise <b>Ignore small bits</b>. Wobbly: raise <b>Smoothness</b>. Then tidy up with Eraser, Clear space and Draw over the faint photo. No cut line is added for a photo - for a cut-out shape use <b>⬡ Add shape</b> (or Make cut in Size &amp; cut).`; else
+  if (r.engine === 'exact' || r.engine === 'centre') $('traceInfo').innerHTML = (r.engine === 'exact'
+      ? `<b>Exact outline</b>: ${r.paths.length - nc} lines, ${r.nodes} points. Every edge is placed to a fraction of a pixel, corners stay sharp and curves stay smooth. ${r.aliased ? 'This picture has hard, stair-stepped edges (a small or low-quality picture), so the steps were smoothed out. A bigger or sharper picture traces even better. ' : ''}${r.darkBg ? 'Light shapes on a dark background. ' : ''}${nc ? 'Red cut line found round the design.' : '<span class="warn">No outside edge found.</span>'}${r.parts > 1 ? ' The separate parts are joined by one cut line.' : ''}`
+      : `<b>Centre line</b>: ${r.paths.length} lines, ${r.nodes} points - one line down the middle of every pen stroke (best for hair-thin drawings, where an outline would be a double line).`)
+    + ` Not what you wanted? Use <b>Outline</b> / <b>Centre line</b> / <b>Old tracer</b> above. Detail: higher keeps tiny bits and traces tighter.`;
+  else if (S.trace.engine === 'auto' && r.clean === false && r.mode !== 'photo') $('traceInfo').innerHTML = `This picture is not clean black-and-white (it has grey shading or paper in it), so the <b>older tracer</b> was used. ${r.paths.length - nc} lines, ${r.nodes} points. To force the new exact tracer tap <b>Outline</b>.`;
+  else
   $('traceInfo').innerHTML = `${r.paths.length - nc} lines, ${r.nodes} points, drawn line ≈ ${f1(r.lw)} px wide. ${r.darkBg ? 'Auto: light shapes on a dark background (if that is wrong, tap <b>Dark lines on light paper</b>).' : r.mode === 'light' ? 'Light lines on dark.' : r.mode === 'normal' ? 'Dark lines on light paper.' : 'Auto: dark lines on light paper.'} ${nc ? 'Red cut line found around the design.' : '<span class="warn">No outside edge found.</span>'}${r.solids ? ` ${r.solids} solid dark shape${r.solids > 1 ? 's' : ''} (windows, hinges…) traced round the edge.` : ''}${r.gaps ? ` Closed ${r.gaps} small gap${r.gaps > 1 ? 's' : ''}.` : ''}${r.parts > 1 ? ` <span class="warn">${r.parts - 1} part(s) sit apart from the main design and are outside the cut line.</span>` : ''}`;
   // photos: no automatic cut line (on a busy photo it would cut many small holes) - add a shape or Make cut by choice
   photoBgUI(); changed(); if (!S.noAutoCut && S.trace.kind !== 'photo' && !hasOuterCut() && etch().length) makeCut(true); }
@@ -186,10 +192,13 @@ async function openFile(file, kind = 'line') { if (!file) return;
       const sk = []; if (r.info.skippedWhite) sk.push(`${r.info.skippedWhite} white background shape${r.info.skippedWhite > 1 ? 's' : ''}`); if (r.info.skippedText) sk.push(`${r.info.skippedText} text item(s) (convert text to paths first)`); if (r.info.skippedUse) sk.push(`${r.info.skippedUse} linked symbol(s)`);
       $('srcInfo').innerHTML = `SVG: ${r.paths.length} lines from ${r.info.shapes} shapes, curves kept.${sk.length ? `<br><span class="warn">Skipped ${sk.join(', ')}.</span>` : ''}`;
       syncInputs(); enterApp(); openSec('sec-size', false); closeMenu(); changed(); fit(); toast(`Opened ${r.paths.length} lines from the SVG`); return; }
-    const el = await loadImage(file), sc = Math.min(1, 1600 / Math.max(el.width, el.height)), w = Math.max(1, Math.round(el.width * sc)), h = Math.max(1, Math.round(el.height * sc));
-    const alphaOk = /png|gif|webp/i.test(file.type), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); if (!alphaOk) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } g.drawImage(el, 0, 0, w, h);
-    const url = c.toDataURL(alphaOk ? 'image/png' : 'image/jpeg', 0.92);
-    startProject(name); S.trace.kind = kind === 'photo' ? 'photo' : 'line'; if (S.trace.kind === 'photo') { S.trace.photo = photoLast(); S.showPhoto = true; } traceKindUI(); syncInputs();
+    const el = await loadImage(file), alphaOk = /png|gif|webp/i.test(file.type);
+    // v5.12: a clean black-and-white picture keeps up to 2400 px (the exact tracer uses every pixel); anything else stays at 1600 px as before
+    const draw = lim => { const sc = Math.min(1, lim / Math.max(el.width, el.height)), w = Math.max(1, Math.round(el.width * sc)), h = Math.max(1, Math.round(el.height * sc)), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); if (!alphaOk) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } g.drawImage(el, 0, 0, w, h); return { c, w, h, g }; };
+    let cv = draw(Math.max(el.width, el.height) > 1600 && kind !== 'photo' && engPref !== 'classic' ? 2400 : 1600), pngOut = alphaOk;
+    if (kind !== 'photo' && engPref !== 'classic') { let clean = false; try { const d0 = cv.g.getImageData(0, 0, cv.w, cv.h); clean = T.isClean({ data: d0.data, w: cv.w, h: cv.h }).clean; } catch (e) { /* */ } if (clean) pngOut = true; else if (Math.max(cv.w, cv.h) > 1600) cv = draw(1600); }
+    const { c, w, h } = cv, url = c.toDataURL(pngOut ? 'image/png' : 'image/jpeg', 0.92);
+    startProject(name); S.trace.engine = engPref; S.trace.kind = kind === 'photo' ? 'photo' : 'line'; if (S.trace.kind === 'photo') { S.trace.photo = photoLast(); S.showPhoto = true; } traceKindUI(); syncInputs();
     S.src = { kind: 'image', w, h, url }; $('sec-trace').hidden = false; await setSource(url); $('srcInfo').textContent = `${file.name} · ${w} × ${h} px.`;
     enterApp(); openSec('sec-trace', false); closeMenu(); fit(); await retrace(false); fit(); }
   catch (e) { console.error(e); toast(e.message || 'Could not open that file.', 4000); } }
@@ -231,8 +240,12 @@ async function overlayFile(file, kind = 'line') { if (!file) return; if (!S.path
 ['overlayPhoto'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; overlayFile(f, 'photo'); }); });
 // ---------- inputs ----------
 function syncInputs() { $('nameBtn').textContent = (S.name || 'Untitled') + ' ✎'; $('detail').value = S.trace.detail; $('detailOut').textContent = S.trace.detail; $('corners').value = S.trace.corners; $('cornersOut').textContent = S.trace.corners;
-  traceModeUI(); traceKindUI(); photoBgUI(); $('faint').value = S.trace.faint == null ? 4 : S.trace.faint; $('faintOut').textContent = $('faint').value; sheetUI(); $('straighten').checked = S.trace.straighten !== false; $('showPhoto').checked = S.showPhoto; $('widthMm').value = S.widthMm; $('lineMm').value = S.lineMm;
+  traceModeUI(); traceKindUI(); traceEngineUI(); photoBgUI(); $('faint').value = S.trace.faint == null ? 4 : S.trace.faint; $('faintOut').textContent = $('faint').value; sheetUI(); $('straighten').checked = S.trace.straighten !== false; $('showPhoto').checked = S.showPhoto; $('widthMm').value = S.widthMm; $('lineMm').value = S.lineMm;
   $('cutOn').checked = S.cutOn; $('cutOff').value = S.cutOff; $('cutTight').value = S.cutTight || 8; $('cutTightOut').textContent = S.cutTight || 8; $('gapMm').value = S.gapMm; $('shortMm').value = S.shortMm; $('sec-trace').hidden = !(S.src && S.src.kind === 'image'); lzUI(); cutInfo(); }
+// v5.12 how the picture is read: Auto (exact outline for clean black-and-white, centre line for hair-thin pen lines), Outline, Centre line, or the older tracer
+let engPref = 'auto', lastTr = null;
+function traceEngineUI() { const e = S.trace.engine || 'classic'; document.querySelectorAll('[data-teng]').forEach(b => b.classList.toggle('on', b.dataset.teng === e)); if ($('faintRow')) $('faintRow').hidden = e === 'exact' || e === 'centre'; }
+document.querySelectorAll('[data-teng]').forEach(b => b.onclick = () => { S.trace.engine = engPref = b.dataset.teng; traceEngineUI(); traceSoon(); });
 $('detail').addEventListener('input', e => { S.trace.detail = +e.target.value; $('detailOut').textContent = S.trace.detail; traceSoon(); });
 $('corners').addEventListener('input', e => { S.trace.corners = +e.target.value; $('cornersOut').textContent = S.trace.corners; traceSoon(); });
 function traceModeUI() { const m = S.trace.mode || (S.trace.invert ? 'light' : 'auto'); document.querySelectorAll('[data-tmode]').forEach(b => b.classList.toggle('on', b.dataset.tmode === m)); }
@@ -646,7 +659,7 @@ function saveSoon() { clearTimeout(saveT); saveT = setTimeout(saveNow, 600); }
 async function saveNow() { if (!S.src && !S.paths.length) return; S.saved = Date.now(); if (!S.pid && window.PJ) S.pid = PJ.newId(); try { const st = JSON.parse(JSON.stringify(S)); await DB.put('last', st); if (window.PJ) await PJ.saved(st); $('saveInfo').textContent = 'Saved on this device ' + new Date(S.saved).toLocaleTimeString(); } catch (e) { $('saveInfo').textContent = 'Could not save on this device: ' + e.message; } }
 // v1/v2 projects stored plain point lists: turn them into Bezier paths
 function migrate(v) { if (Array.isArray(v.paths) && v.paths.length && Array.isArray(v.paths[0])) v.paths = v.paths.filter(p => p.length > 1).map(p => BZ.fromPolyline(p, { tol: 0.6, arm: 4, corner: 35, closed: p.length > 3 && Math.hypot(p[0][0] - p[p.length - 1][0], p[0][1] - p[p.length - 1][1]) < 0.01 })).filter(Boolean);
-  const ot = v.trace || {}; v.trace = Object.assign(DEFAULTS().trace, ot); if (!ot.mode) v.trace.mode = ot.invert ? 'light' : 'auto'; delete v.trace.invert; v.sheet = Object.assign(SHEET0(), v.sheet || {}); if (v.ver !== 3) { v.cutOn = false; v.ver = 3; } if (!v.v4) { if (v.cutOff == null || v.cutOff === 3) v.cutOff = 0.5; v.cutTight = v.cutTight || 8; v.showPhoto = false; v.v4 = 1; } return v; }
+  const ot = v.trace || {}; v.trace = Object.assign(DEFAULTS().trace, ot); if (!ot.engine) v.trace.engine = 'classic'; if (!ot.mode) v.trace.mode = ot.invert ? 'light' : 'auto'; delete v.trace.invert; v.sheet = Object.assign(SHEET0(), v.sheet || {}); if (v.ver !== 3) { v.cutOn = false; v.ver = 3; } if (!v.v4) { if (v.cutOff == null || v.cutOff === 3) v.cutOff = 0.5; v.cutTight = v.cutTight || 8; v.showPhoto = false; v.v4 = 1; } return v; }
 async function resume(v0) { const v = v0 || await DB.get('last'); if (!v) return false; S = Object.assign(DEFAULTS(), migrate(v)); undoSt = []; redoSt = []; srcImg = srcEl = null; clearSel(); pen = null;
   if (S.src && S.src.kind === 'image' && S.src.url) await setSource(S.src.url); $('srcInfo').textContent = S.src ? (S.src.kind === 'svg' ? 'Imported SVG.' : `Picture ${S.src.w} × ${S.src.h} px.`) : 'No picture yet.';
   syncInputs(); enterApp(); changed(); fit(); return true; }
@@ -674,7 +687,7 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('installBtn').hidden = false; });
 $('installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('installBtn').hidden = true; };
 window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
-$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: one big ETCH | CUT switch (Cut out turns CUT mode on), and Send to Waylands Post. A saved v5.8 copy is still there if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
+$('homeVer').textContent = 'Waylands Path ' + APP_VERSION + ' · works offline · new: a much sharper, exact tracer for black-and-white pictures (Trace section: Auto / Outline / Centre line / Old tracer). New traces of the same picture give different, more accurate lines - check on screen before you burn. A saved v5.8 copy is still there if you need to go back. Draw the cut and Trace edge are unchanged'; $('verOut').textContent = APP_VERSION;
 // ---------- updates: check on open and whenever the app comes back to the front; reload by itself when idle ----------
 $('verTag').textContent = APP_VERSION;
 let lastAct = Date.now(), updWant = null, updTimer = null;
