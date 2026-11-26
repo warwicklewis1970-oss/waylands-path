@@ -116,7 +116,7 @@ window.T4 = (() => {
   function inkStart(p) { inkClear(); const k = inkCtx(); if (!k) return; const d = window.devicePixelRatio || 1; k.setTransform(d, 0, 0, d, 0, 0); k.fillStyle = inkCut ? '#e03131' : '#1971c2'; k.beginPath(); k.arc(p[0], p[1], 1.8, 0, 7); k.fill(); INK.last = p.slice(); }
   function inkTo(p) { if (!INK.last) { INK.last = p.slice(); return; } INK.q.push([INK.last, p.slice()]); INK.last = p.slice(); if (!INK.raf) INK.raf = requestAnimationFrame(inkFlush); }
   function inkClear() { const k = inkCtx(); if (INK.raf) cancelAnimationFrame(INK.raf); INK.raf = 0; INK.q = []; INK.last = null; if (k) { k.setTransform(1, 0, 0, 1, 0, 0); k.clearRect(0, 0, INK.c.width, INK.c.height); } }
-  function cancelG(g) { if (g.t4 === 'draw') { DR.pts = null; inkClear(); } if (g.t4 === 'rub') RB.at = null; }
+  function cancelG(g) { if (g.t4 === 'draw') { DR.pts = null; inkClear(); } if (g.t4 === 'rub') { RB.at = null; S.paths.forEach(q => { delete q._rk; }); } }
   // ================= Select (whole line) =================
   // a "whole line" = the tapped line plus any line that carries straight/smoothly on from its ends (a plank split at a junction)
   const endDir = (p, end) => { const n = p.n, m = n.length; if (end === 0) { const a = n[0], q = a.o || (n[1] ? [n[1].x, n[1].y] : [a.x + 1, a.y]); return norm([q[0] - a.x, q[1] - a.y]); } const z = n[m - 1], q = z.i || [n[m - 2].x, n[m - 2].y]; return norm([q[0] - z.x, q[1] - z.y]); };
@@ -578,7 +578,7 @@ window.T4 = (() => {
     ['slKind', 'ppKind', 'drKind', 'teKind'].forEach(id => { const el = $(id); if (!el) return; el.querySelectorAll('button').forEach(b => b.onclick = () => { if (id === 'slKind') applySelKind(b.dataset.kind === 'cut'); else if (id === 'teKind') { TE.cut = b.dataset.kind === 'cut'; if (window.WP && WP.setEditKind) WP.setEditKind(TE.cut ? 'cut' : 'etch', { silent: true }); panel(); draw(); } else setInkCut(b.dataset.kind === 'cut'); }); }); on('t4clGo', doClear); document.querySelectorAll('[data-clmode]').forEach(b => b.onclick = () => { CL.mode = b.dataset.clmode; CL.pts = []; panel(); draw(); }); { const gr = $('t4clGrow'); if (gr) gr.onchange = () => { CL.grow = gr.checked; panel(); draw(); }; } on('t4clBack', () => { CL.pts.pop(); panel(); draw(); }); on('t4clNo', () => { CL.regs = []; CL.box = null; CL.pts = []; panel(); draw(); });
     on('t4thAll', () => applyThick(true)); on('t4slDel', () => selAct('del')); on('t4slBrkB', () => selAct('brk')); on('t4slTh', () => selAct('thick'));
     on('t4slOk', selConfirm); on('t4slNo', () => { SL.mode = null; SL.a = SL.b = SL.plan = null; panel(); draw(); });
-    if (typeof tool !== 'undefined' && tool === 'move') setTool('sel'); on('t4coOut', () => WP.openMenu('sec-size'));
+    on('t4coOut', () => WP.openMenu('sec-size'));
     const rb = $('t4rb'); if (rb) rb.oninput = () => { RB.px = +rb.value; panel(); };
     document.querySelectorAll('[data-rbmode]').forEach(b => b.onclick = () => { RB.mode = b.dataset.rbmode; document.querySelectorAll('[data-rbmode]').forEach(x => x.classList.toggle('on', x === b)); });
     const w = $('t4w'), wn = $('t4wn'), dbl = $('t4dbl'), dd = $('t4dd');

@@ -121,19 +121,19 @@ window.CN = (() => {
     const k = kmm(), b = bbOf(list.map(p => ({ n: p.n, z: p.z, hole: p.hole })), k), m = 2 / k; setArea([[b.x0 - m, b.y0 - m], [b.x1 + m, b.y0 - m], [b.x1 + m, b.y1 + m], [b.x0 - m, b.y1 + m]]);
     toast(`The whole design is in the area: ${areaText()}. ${S.paths.some(isOuter) ? OUTER_NOTE + ' ' : ''}Tap + Clone this area to copy it.`, 4500); }
   // ---------- actions ----------
-  function doClone() { const fromV = !!(C.virt && C.virt.length), list = fromV ? C.virt : live(); if (!list.length) { toast(C.mode === 'tap' ? 'Tap a line, shape or hole first, then Clone' : 'Draw round something first (or Select all), then Clone'); return; } C.virt = null;
-    const k0 = begin(), off = 5 / k0, g = newG(), copies = list.map(p => { const q = BZ.clone(Object.assign({}, p, { xf: undefined })); delete q.xf; delete q.tabs; delete q.tabBase; delete q._tsig;
+  function doClone() { const mk = window.CALM ? CALM.mark() : null; const fromV = !!(C.virt && C.virt.length), list = fromV ? C.virt : live(); if (!list.length) { toast(C.mode === 'tap' ? 'Tap a line, shape or hole first, then Clone' : 'Draw round something first (or Select all), then Clone'); return; } C.virt = null;
+    const k0 = begin(), off = 5 / k0, g = newG(), copies = list.map(p => { const q = BZ.clone(Object.assign({}, p, { xf: undefined })); delete q.xf; delete q.uid; delete q.tabs; delete q.tabBase; delete q._tsig;
       if (q.hole) { q.hole.cx += off; q.hole.cy += off; } else q.n.forEach(nd => { nd.x += off; nd.y += off; if (nd.i) { nd.i[0] += off; nd.i[1] += off; } if (nd.o) { nd.o[0] += off; nd.o[1] += off; } });
       return q; });
     for (const q of copies) { S.paths.push(q); q.xf = { g, o: geomOf(q), b: geomOf(q), sx: 1, sy: 1, r: 0, dx: 0, dy: 0, copy: true }; }
     if (copies.some(q => q.hole) && window.HH) HH.sync();
     const bb = bbOf(copies, k0); for (const q of copies) { q.xf.c = [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2]; q.xf.sig = sigOf(q); }
-    if (copies.some(q => q.cut)) S.cutOn = true; try { remember(list, k0); } catch (e) { /* the copy is made even if it can't be remembered */ } choose(copies, list.length > 1 && C.grp); commit(k0);
+    if (copies.some(q => q.cut)) S.cutOn = true; try { remember(list, k0); } catch (e) { /* the copy is made even if it can't be remembered */ } choose(copies, list.length > 1 && C.grp); commit(k0); if (window.CALM) CALM.place('clone', mk);
     toast(`Copy made, 5 mm down and right${copies.length > 1 ? ` (${counts(copies)})` : copies[0].hole ? ` (Ø ${copies[0].hole.d} mm hole)` : copies[0].cut ? ' (cut out)' : ''}. Drag it, or use the boxes below.`, 3200); }
   // ---------- v5.1 recent clones: the last 3 things you cloned, kept on this device (any project) ----------
   // Stored in mm from the shape's own centre, with its type (etch / cut out / hole, thickness, double line), so a recent
   // clone placed on another design is the same size in mm and burns the same way as the one you cloned.
-  const RKEY = 'wp-cnRecent', RMAX = 3, DROP = ['n', 'xf', 'tabs', 'tabBase', '_tsig'];
+  const RKEY = 'wp-cnRecent', RMAX = 3, DROP = ['n', 'xf', 'uid', 'tabs', 'tabBase', '_tsig'];
   function recents() { try { const a = JSON.parse(localStorage.getItem(RKEY) || '[]'); return Array.isArray(a) ? a.filter(r => r && Array.isArray(r.items) && r.items.length) : []; } catch (e) { return []; } }
   function remember(list, k) { const bb = bbOf(list.map(p => ({ n: p.n, z: p.z, hole: p.hole })), k); if (!bb) return; const cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, m = v => Math.round(v * 1e4) / 1e4;
     const mp = (x, y) => [m((x - cx) * k), m((y - cy) * k)];
@@ -144,7 +144,7 @@ window.CN = (() => {
     let all = recents().filter(r => JSON.stringify(r.items) !== key); all.unshift(rec); all = all.slice(0, RMAX);
     try { localStorage.setItem(RKEY, JSON.stringify(all)); } catch (e) { try { localStorage.setItem(RKEY, JSON.stringify([rec])); } catch (e2) { /* too big to keep - the clone itself still worked */ } }
     recentsRow(true); }
-  function placeRecent(idx) { const rec = recents()[idx]; if (!rec) return; const k0 = begin(), k = k0, r = cv.getBoundingClientRect(), c = toU(r.width / 2, r.height / 2), g = newG();
+  function placeRecent(idx) { const rec = recents()[idx]; if (!rec) return; const mk = window.CALM ? CALM.mark() : null; const k0 = begin(), k = k0, r = cv.getBoundingClientRect(), c = toU(r.width / 2, r.height / 2), g = newG();
     const U = q => [c[0] + q[0] / k, c[1] + q[1] / k];
     const copies = rec.items.map(it => { const q = JSON.parse(JSON.stringify(it.props));
       if (q.hole) { const u = U([q.hole.cx, q.hole.cy]); q.hole.cx = u[0]; q.hole.cy = u[1]; q.z = true; q.n = window.HH ? HH.circle(u[0], u[1], HH.pathR(q.hole) / k) : []; }
@@ -154,7 +154,7 @@ window.CN = (() => {
     if (copies.some(q => q.hole) && window.HH) HH.sync();
     for (const q of copies) q.xf.o = q.xf.b = geomOf(q);
     const bb = bbOf(copies, k0); for (const q of copies) { q.xf.c = [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2]; q.xf.sig = sigOf(q); }
-    if (copies.some(q => q.cut)) S.cutOn = true; choose(copies, copies.length > 1); commit(k0); requestAnimationFrame(seen);
+    if (copies.some(q => q.cut)) S.cutOn = true; choose(copies, copies.length > 1); commit(k0); if (window.CALM) CALM.place('clone', mk); requestAnimationFrame(seen);
     toast(`Recent clone placed in the middle of the screen (${f1(rec.w)} × ${f1(rec.h)} mm). Drag it, or use the boxes below.`, 3500); }
   function thumb(rec, cvs) { const g = cvs.getContext('2d'), W = cvs.width, H = cvs.height; g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; const grow = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
@@ -204,7 +204,7 @@ window.CN = (() => {
     if (C.area) { const st = areaHit(C.area.poly, u, e); if (st) { g.cn = 'area'; g.st = st; const keep = st.poly0; g.restore = () => { if (C.area) { C.area.poly = keep; panel(); draw(); } }; } else g.cn = 'pan'; return g; } // v5.4: the area is being adjusted; one finger outside moves the picture
     if (fr) { const near = q => Math.hypot(u[0] - q[0], u[1] - q[1]) <= hr;
       const areaPick = C.mode !== 'tap' && !fr.list.every(q => q.xf && q.xf.copy); // v5.3: in Lasso / Box a drag over picked originals draws a new selection (copies still drag)
-      const mode = near(fr.scl) ? 'scale' : (!fr.list.every(q => q.hole) && near(fr.rot)) ? 'rot' : (!areaPick && onBox(fr, u)) ? 'move' : null;
+      const mode = near(fr.scl) ? 'scale' : (!fr.list.every(q => q.hole) && near(fr.rot)) ? 'rot' : (!areaPick && onBox(fr, u)) ? 'move' : (window.CALM && CALM.placing('clone') && fr.list.every(q => q.xf && q.xf.copy)) ? 'move' : null;
       if (mode) { g.cn = mode; g.k0 = kmm(); g.snap = snap(); g.snap._w = S.widthMm; C.g = prep(fr.list); const xf = fr.list[0].xf; g.v0 = { sx: xf.sx, sy: xf.sy, r: xf.r, dx: xf.dx, dy: xf.dy }; g.c = T(xf, xf.c[0], xf.c[1]); g.h0 = fr.scl; g.bb = bbOf(fr.list, g.k0); } }
     if (g.cn === 'tap' && C.mode !== 'tap') { g.cn = 'lasso'; g.pts = [u]; g.restore = () => { C.drag = null; draw(); }; }
     return g; }

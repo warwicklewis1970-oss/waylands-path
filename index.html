@@ -53,10 +53,13 @@
     <div id="modeBanner" class="modebanner" hidden></div>
     <div id="cutLegend" class="cutleg" hidden><b class="cut">Red = CUT through</b> · <b class="etch">Black = ETCH</b></div>
     <div id="busy" class="busy" hidden>Tracing…</div>
+    <div id="quick" aria-label="Undo and redo"><button id="qUndo" type="button" aria-label="Undo" title="Undo" disabled>↶<small>Undo</small></button><button id="qRedo" type="button" aria-label="Redo" title="Redo" disabled>↷<small>Redo</small></button></div>
+    <div id="placePill" hidden role="group" aria-label="Place it"><span id="placeLbl">Drag it where you want it</span><button id="plOpts" type="button" title="Show the options">⚙</button><button id="plCancel" type="button">✕ Cancel</button><button id="plDone" type="button" class="accent">✓ Done</button></div>
     <div id="empty" class="empty"><label class="filebtn big">🖼️ Open line drawing or SVG<input type="file" id="stageFile" accept="image/*,.svg,image/svg+xml,.json,.wayland.json" hidden></label></div>
     <button id="bgBtn" class="bgbtn" hidden aria-pressed="false" title="Faint photo behind the lines (screen only)">🖼 Photo</button>
   </section>
   <div id="toolDock">
+    <div id="dockBar" role="group" aria-label="Tools bar"><button id="dockHandle" type="button" aria-expanded="true" title="Hide or show the tools"><span class="chev">▾</span> <span id="dockTitle">Hide tools</span></button><button id="handBtn" type="button" class="on" aria-pressed="true" title="Hand: move and zoom only, nothing can be changed">✋ Hand</button><button id="lockBtn" type="button" aria-pressed="false" title="Lock: nothing can be changed until you unlock">🔓</button></div>
     <div id="tools" role="toolbar" aria-label="Tools">
       <button data-tool="sel" class="tool" title="Tap a line to pick the whole line: delete, break, thickness, cut"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3 L19 12 L12.5 13.5 L16 20.5 L13.2 21.8 L9.8 14.8 L5 19 Z" fill="currentColor"/></svg><span>Select</span></button>
       <button data-tool="p2p" class="tool" title="Tap point to point for straight lines; drag a line to bend it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19 L11 7 L20 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="4" cy="19" r="2.3" fill="currentColor"/><circle cx="11" cy="7" r="2.3" fill="currentColor"/><circle cx="20" cy="15" r="2.3" fill="currentColor"/></svg><span>Point to point</span></button>
@@ -68,6 +71,7 @@
       <button data-tool="clear" class="tool" title="Tap areas (or drag a box), then clear every line inside"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6 L18 4 L20 17 L7 20 Z" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2" fill="none"/><path d="M9 10 L15 15 M15 10 L9 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Clear space</span></button>
       <button data-tool="clone" class="tool" title="Clone: copy a line, shape, hole or a whole group (lasso / box), then size, turn and move it"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.25"/></svg><span>Clone</span></button>
       <button data-tool="edge" class="tool" title="Trace edge: draw a line alongside another, at a distance you set"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5 C8 4.5, 16 4.5, 20.5 17.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M5.2 19.2 C9 8.2, 15 8.2, 18.8 19.2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="2.4 2"/></svg><span>Trace edge</span></button>
+      <button data-tool="restore" class="tool" title="Restore: put just the lines or points you pick back to how they were before your last change"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12 A7 7 0 1 0 8 6.2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M4 4.5 V9 H8.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Restore</span></button>
     </div>
     <div id="editBar" class="editbar">
       <span class="editlbl">Editing:</span>
@@ -77,7 +81,7 @@
       </div>
     </div>
     <div id="toolOpts">
-      <div data-opts="move" class="topts">Pick a tool. With no tool picked, one finger moves the picture. Two fingers always move and zoom.</div>
+      <div data-opts="move" class="topts"><b>✋ Hand mode.</b> Drag to move the picture, pinch to zoom. Nothing can be changed. Pick a tool to edit; it goes back to Hand by itself when you stop.</div>
       <div data-opts="sel" class="topts t4p" hidden>
         <div class="seg kindseg" id="slKind" hidden><button type="button" data-kind="etch">ETCH</button><button type="button" data-kind="cut">CUT</button></div>
         <div class="t4b" id="slGapRow" hidden><button id="slClose" class="accent grow">✓ Close the gap</button></div>
@@ -128,6 +132,11 @@
           <div class="cnrow cnflip"><button id="cnFH" title="Mirror it left to right">↔ Flip horizontal</button><button id="cnFV" title="Mirror it top to bottom">↕ Flip vertical</button></div>
           <div class="nudge cnnudge"><span class="lbl2">Move</span><button data-cnnudge="-1,0" aria-label="Move left">◀</button><button data-cnnudge="0,-1" aria-label="Move up">▲</button><button data-cnnudge="0,1" aria-label="Move down">▼</button><button data-cnnudge="1,0" aria-label="Move right">▶</button><select id="cnStep" aria-label="Move step"><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="5">5 mm</option><option value="10">10 mm</option></select></div>
         </div>
+      </div>
+      <div data-opts="restore" class="topts t4p" hidden>
+        <div class="seg kindseg" id="rsMode" role="group" aria-label="How to pick"><button type="button" data-rsmode="tap" class="on">👆 Line</button><button type="button" data-rsmode="pts">● Points</button><button type="button" data-rsmode="box">⬚ Box</button><button type="button" data-rsmode="lasso">➰ Lasso</button></div>
+        <div class="t4h" id="rsHint"></div>
+        <div class="t4b"><button type="button" id="rsClear">✕ Clear pick</button><button type="button" id="rsGo" class="accent big2">↩ Restore picked</button></div>
       </div>
       <div data-opts="edge" class="topts t4p" hidden>
         <div class="stepper" id="teDistRow"><span class="lbl2">Distance</span><button type="button" id="teMmM" aria-label="Less">−</button><input type="number" id="teMm" class="num" inputmode="decimal" min="0.1" max="50" step="0.1" value="2"><button type="button" id="teMmP" aria-label="More">+</button><span class="u">mm</span></div>
@@ -380,5 +389,7 @@
 <script src="js/clone.js"></script>
 <script src="js/tarea.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/calm.js"></script>
+<script src="js/restore.js"></script>
 </body>
 </html>

@@ -100,7 +100,7 @@ window.T2 = (() => {
     SH.cur = null; changed(); shUI(); toast(SH.asCut ? 'Shape added as a cut line (red)' : 'Shape added - use Points to fine-tune it'); }
   // ================= gestures =================
   function down(e, p, u, base) { const tol = tolPx(e);
-    if (tool === 'shapes') { if (SH.cur) { const h = hitHandleSH(u, tol) || (insideSH(u) ? { id: 'move' } : null);
+    if (tool === 'shapes') { if (SH.cur) { const h = hitHandleSH(u, tol) || (insideSH(u) || (window.CALM && CALM.placing('shape')) ? { id: 'move' } : null);
         if (h) { const keep = JSON.parse(JSON.stringify({ c: SH.cur, t: SH.trim })); return Object.assign(base, { t2: 'shh', h, c0: Object.assign({}, SH.cur), restore: () => { SH.cur = keep.c; SH.trim = keep.t; shUI(); draw(); } }); }
         return Object.assign(base, { t2: 'pan', tx: view.tx, ty: view.ty }); }
       return Object.assign(base, { t2: 'shdraw', restore: () => { SH.cur = null; shUI(); draw(); } }); }
@@ -123,7 +123,7 @@ window.T2 = (() => {
       shUI(); draw(); } }
   function up(g, e) { if (g.t2 === 'pan') return; if (g.t2 === 'tap') { if (!g.moved) tap(g.u0, e); return; }
     if (g.t2 === 'shdraw' && !g.moved) { const r = 60 / view.s; SH.cur = { cx: g.u0[0], cy: g.u0[1], rx: r, ry: SH.even || SH.kind !== 'ellipse' ? r : r * 0.7, rot: 0 }; }
-    shUI(); draw(); }
+    shUI(); draw(); if (g.t2 === 'shdraw' && SH.cur && window.CALM) CALM.place('shape'); }
   function tap(u, e) { const tol = tolPx(e);
     if (LN.step === 'pick') { const h = hitPath(u, tol); if (!h) { toast('Tap right on a line'); return; } startBreak(h.pi); return; }
     if (LN.step === 'a') { const q = snapPoint(u, tol, false); if (!LN.a) LN.a = q; else { if (hyp(q[0] - LN.a[0], q[1] - LN.a[1]) < 1e-6) return; LN.b = q; LN.step = 'shape'; } lnUI(); draw(); return; }
@@ -155,7 +155,7 @@ window.T2 = (() => {
     $$('lnBtns').addEventListener('click', e => { const b = e.target.closest('[data-ln]'); if (b) lnAction(b.dataset.ln); });
     $$('lnNew').onclick = () => { LN.mode = 'new'; lnReset(true); }; $$('lnBrk').onclick = () => { LN.mode = 'break'; lnReset(true); };
     $$('lnOldSkip').onclick = () => setTool('skip');
-    document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { const v = b.dataset.shape; if (v === 'ellipse' || v === 'star') SH.kind = v; else { SH.kind = 'poly'; SH.n = +v.slice(1); } if (v === 'star' && SH.n < 5) SH.n = 5; shUI(); draw(); });
+    document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { const v = b.dataset.shape; if (v === 'ellipse' || v === 'star') SH.kind = v; else { SH.kind = 'poly'; SH.n = +v.slice(1); } if (v === 'star' && SH.n < 5) SH.n = 5; shUI(); draw(); if (window.CALM && !SH.cur) CALM.beginDraw(); });
     $$('shSides').oninput = () => { const n = Math.round(+$$('shSides').value); if (n >= 3 && n <= 12) { SH.n = n; if (SH.kind === 'ellipse') SH.kind = 'poly'; shUI(); draw(); } };
     $$('shEven').onchange = () => { SH.even = $$('shEven').checked; if (SH.even && SH.cur) SH.cur.rx = SH.cur.ry = Math.max(SH.cur.rx, SH.cur.ry); shUI(); draw(); };
     $$('shTrimOn').onchange = () => { SH.trim.on = $$('shTrimOn').checked; shUI(); draw(); };
@@ -166,5 +166,5 @@ window.T2 = (() => {
     $$('shDone').onclick = shDone; $$('shCancel').onclick = () => { SH.cur = null; shUI(); draw(); };
     lnUI(); shUI(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  return { down, move, up, paint, onTool, startBreak, LN, SH, shapePaths, lnPath, handles, cancel: () => { lnReset(true); SH.cur = null; shUI(); } };
+  return { down, move, up, paint, onTool, startBreak, LN, SH, shapePaths, lnPath, handles, shDone, shCancel: () => { SH.cur = null; shUI(); draw(); }, cancel: () => { lnReset(true); SH.cur = null; shUI(); } };
 })();
